@@ -1,0 +1,10 @@
+# pack-refs with: peeled fully-peeled sorted 
+5f14f3e56ac21b349eb45be127ee621e3d5945bd refs/remotes/origin/0.1
+c9353e4b183ab871094722753748ce3eee47d3f2 refs/remotes/origin/0.2
+fb718a063b8b21a8d695352389741a3b6ac113e3 refs/remotes/origin/0.3
+11b14ff1c7f1a36c983ee49ef57fa46b667c9ef4 refs/remotes/origin/0.4
+a2e3589b1c3565dcb1fe13eda336b002212b0ea0 refs/remotes/origin/0.4.1
+7a21563f5f0e20628b07453e5ac91bad67b6a721 refs/remotes/origin/0.4.2
+6fec46ec636b7e1d5fc27b7ff66a7823e0c4fa47 refs/remotes/origin/0.4.3
+1738bb3958cd090698dd8b4c1736aa3a3263af97 refs/remotes/origin/integr_learn_plan3
+f5015b37ad70181537152243a2569c94b55cad92 refs/remotes/origin/master
