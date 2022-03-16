@@ -384,13 +384,13 @@ class TrainerController(Controller):
             raise
 
     def onStart(self, agent):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if self._active == False:
             return
         
         self._count = 0
 
     def onEpisodeEnd(self, agent, terminal_reached, reward):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if self._active == False:
             return
         
         if self._on_episode:
@@ -400,14 +400,14 @@ class TrainerController(Controller):
         if self._show_episode_avg_V_value: print("Episode average V value: {}".format(agent.avgEpisodeVValue())) # (on non-random action time-steps)
 
     def onEpochEnd(self, agent):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if self._active == False:
             return
 
         if self._on_epoch:
             self._update(agent)
 
     def onActionTaken(self, agent):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if self._active == False:
             return
 
         if self._on_action:
@@ -438,14 +438,13 @@ class VerboseController(Controller):
         List of agent modes for which this controller is used
     """
 
-    def __init__(self, evaluateOn=False, evaluate_on='epoch', periodicity=1, modes=[-1]):
+    def __init__(self, evaluateOn=False, evaluate_on='epoch', periodicity=1):
         """Initializer.
         """
         if evaluateOn is not False:
             raise Exception('For uniformity the attributes to be provided to the controllers respect PEP8 from deer0.3dev1 onwards. For instance, instead of "evaluateOn", you should now have "evaluate_on". Please have a look at https://github.com/VinF/deer/issues/28.')
 
         super(self.__class__, self).__init__()
-        self._modes = modes
         self._count = 0
         self._periodicity = periodicity
         self._string = evaluate_on
@@ -457,27 +456,27 @@ class VerboseController(Controller):
             self._on_epoch = True
 
     def onStart(self, agent):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if self._active == False:
             return
         
         self._count = 0
 
     def onEpisodeEnd(self, agent, terminal_reached, reward):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if self._active == False:
             return
         
         if self._on_episode:
             self._print(agent)
 
     def onEpochEnd(self, agent):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if self._active == False:
             return
 
         if self._on_epoch:
             self._print(agent)
 
     def onActionTaken(self, agent):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if self._active == False:
             return
 
         if self._on_action:
@@ -492,6 +491,7 @@ class VerboseController(Controller):
         self._count += 1
 
 class FindBestController(Controller):
+    # TODO modifier ceci
     """A controller that finds the neural net performing at best in validation mode (i.e. for mode = [validationID]) 
     and computes the associated generalization score in test mode (i.e. for mode = [testID], and this only if [testID] 
     is different from None). This controller should never be disabled by InterleavedTestControllers as it is meant to 
