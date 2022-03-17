@@ -1,0 +1,7 @@
+numpy~=1.22.3
+joblib~=1.1.0
+deer~=0.4.3
+matplotlib~=3.5.1
+tensorflow~=2.8.0
+gym~=0.23.0
+setuptools~=57.0.0
