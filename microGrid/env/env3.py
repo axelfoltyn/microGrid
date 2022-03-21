@@ -12,6 +12,7 @@ More information can be found in the paper to be published :
 Efficient decision making in stochastic micro-grids using deep reinforcement learning, Vincent Francois-Lavet, David Taralla, Raphael Fonteneau, Damien Ernst
 
 """
+import random
 
 import numpy as np
 import copy
@@ -24,12 +25,15 @@ from microGrid.env.plot_MG_operation import plot_op
 
 
 class MicroGrid2(Environment, gym.Env):
-    def __init__(self, rng, reduce_qty_data=None, length_history=None, start_history=None, production_norm=None, consumption_norm=None, scale_prod=12000. / 1000 / 2, scale_cons=2.1):
+    def __init__(self, rng, reduce_qty_data=None, length_history=None, start_history=None, production_norm=None,
+                 consumption_norm=None, scale_prod=12000. / 1000 / 2, scale_cons=2.1, random_start=True):
         """ Initialize environment
 
         Arguments:
             rng - the numpy random number generator
         """
+        # random start condition to improve learning
+        self._random_start = random_start
         absolute_dir = os.path.dirname(os.path.abspath(__file__))
         if consumption_norm is None:
             consumption_norm = np.load(absolute_dir + "/data/example_nondeterminist_cons_train.npy")[
@@ -43,6 +47,7 @@ class MicroGrid2(Environment, gym.Env):
 
         reduce_qty_data = int(reduce_qty_data) if reduce_qty_data is not None else int(1)
         length_history = int(length_history) if length_history is not None else int(12)
+        length_history = 1
         start_history = int(start_history) if start_history is not None else int(0)
         print("reduce_qty_data, length_history, start_history")
         print(reduce_qty_data, length_history, start_history)
@@ -204,6 +209,7 @@ class MicroGrid2(Environment, gym.Env):
         dict_reward = self.my_reward()
         done = self.counter + 24 >= len(self.production_norm) if self._pred == 1 else self.counter >= len(self.production_norm)
         info = {}
+        print("===================>",self._last_ponctual_observation)
         return self._last_ponctual_observation, np.sum(list(dict_reward.values())), done, info
 
     def render(self, mode='human', close=False):
@@ -214,6 +220,17 @@ class MicroGrid2(Environment, gym.Env):
     ###########             deer function             ############
     ##############################################################
     ##############################################################
+
+    def observationType(self, subject):
+        """Gets the most inner type (np.uint8, np.float32, ...) of [subject].
+
+        Parameters
+        -----------
+        subject : int
+            The subject
+        """
+
+        return np.float64
 
     def _init_dict(self):
         self.dict_param = dict()
@@ -234,7 +251,10 @@ class MicroGrid2(Environment, gym.Env):
         elif (self._dist_equinox == 0 and self._pred == 0):
             self._last_ponctual_observation = [1., [0., 0.]]
 
-        self.counter = 1
+        if self._random_start:
+            self.counter = random.randint(1, len(self.production_norm)-1)
+        else:
+            self.counter = 1
         self.hydrogen_storage = 0.
 
         if (self._dist_equinox == 1 and self._pred == 1):
@@ -272,19 +292,20 @@ class MicroGrid2(Environment, gym.Env):
     def observe(self):
         return copy.deepcopy(self._last_ponctual_observation)
 
-    def summarizePerformance(self, test_data_set, *args, **kwargs):
+    #TODO not use that
+    """def summarizePerformance(self, test_data_set, *args, **kwargs):
         print("summary perf")
         print("self.hydrogen_storage: {}".format(self.hydrogen_storage))
         observations = test_data_set.observations()
-        aaa = test_data_set.actions()
+        actions_test = test_data_set.actions()
         rewards = test_data_set.rewards()
         actions = []
-        for a, thea in enumerate(aaa):
-            if (thea == 0):
+        for action in actions_test:
+            if (action == 0):
                 actions.append(-self.hydrogen_max_power)
-            elif (thea == 1):
+            elif (action == 1):
                 actions.append(0)
-            elif (thea == 2):
+            elif (action == 2):
                 actions.append(self.hydrogen_max_power)
 
         battery_level = np.array(observations[0]) * self.battery_size
@@ -302,7 +323,7 @@ class MicroGrid2(Environment, gym.Env):
         #
         i = 360 * 24
         plot_op(actions[0 + i:100 + i], consumption[0 + i:100 + i], production[0 + i:100 + i], rewards[0 + i:100 + i],
-                battery_level[0 + i:100 + i], "plot_winter2_.png")
+                battery_level[0 + i:100 + i], "plot_winter2_.png")"""
 
         ##############################################################
         ##############################################################

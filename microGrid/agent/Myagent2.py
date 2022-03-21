@@ -12,9 +12,9 @@ import sys
 import joblib
 from warnings import warn
 
-from deer.deer.experiment import base_controllers as controllers
-from deer.deer.helper import tree
-from deer.deer.policies import EpsilonGreedyPolicy
+from microGrid.experiment import base_controllers as controllers
+from deer.helper import tree
+from deer.policies import EpsilonGreedyPolicy
 
 class MyAgent:
     """The NeuralAgent class wraps a learning algorithm (such as a deep Q-network) for training and testing in a given environment.
@@ -48,31 +48,28 @@ class MyAgent:
         observations before the beginning of the episode
     """
 
-    def __init__(self, environment, learning_algo, replay_memory_size=1000000, replay_start_size=None, batch_size=32, random_state=np.random.RandomState(), exp_priority=0, policy=None, only_full_history=True):
+    def __init__(self, environment, learning_algo, replay_memory_size=1000000, batch_size=32, random_state=np.random.RandomState(), exp_priority=0, policy=None, only_full_history=True):
         inputDims = environment.inputDimensions()
         
-        if replay_start_size == None:
+        """if replay_start_size == None:
             replay_start_size = max(inputDims[i][0] for i in range(len(inputDims)))
         elif replay_start_size < max(inputDims[i][0] for i in range(len(inputDims))) :
-            raise AgentError("Replay_start_size should be greater than the biggest history of a state.")
+            raise AgentError("Replay_start_size should be greater than the biggest history of a state.")"""
         
         self.dict_controllers = dict()
         self._env = environment
         self._learning_algo = learning_algo
+        self._replay_memory = [] # replay memory holds s, a, r, s'
         self._replay_memory_size = replay_memory_size
-        self._replay_start_size = replay_start_size
         self._batch_size = batch_size
         self._random_state = random_state
         self._exp_priority = exp_priority
         self._only_full_history = only_full_history
-        self._dataset = DataSet(environment, max_size=replay_memory_size, random_state=random_state, use_priority=self._exp_priority, only_full_history=self._only_full_history)
-        self._tmp_dataset = None # Will be created by startTesting() when necessary
         self._totalNbrEpisode = 0
         self._total_reward = 0
         self._training_loss_averages = []
         self._Vs_on_last_episode = []
         self._in_episode = False
-        #self._selected_action = -1
         self._state = []
         for i in range(len(inputDims)):
             self._state.append(np.zeros(inputDims[i], dtype=float))
@@ -123,45 +120,26 @@ class MyAgent:
         elif mode == -1:
             raise AgentError("Mode -1 is reserved and means 'training mode'; use resumeTrainingMode() instead.")
         else:
-            self._mode = mode
             self._total_reward = 0.
-            del self._tmp_dataset
-            self._tmp_dataset = DataSet(self._env, self._random_state, max_size=self._replay_memory_size, only_full_history=self._only_full_history)
 
     """def resumeTrainingMode(self):
         self._mode = -1"""
 
-    def summarizeTestPerformance(self):
+    #TODO NO!!
+    """def summarizeTestPerformance(self):
         if self._mode == -1:
             raise AgentError("Cannot summarize test performance outside test environment.")
 
-        self._env.summarizePerformance(self._tmp_dataset, self._learning_algo, train_data_set=self._dataset)
+        self._env.summarizePerformance(self._tmp_dataset, self._learning_algo, train_data_set=self._dataset)"""
 
     def train(self):
         """
         This function selects a random batch of data (with self._dataset.randomBatch) and performs a 
         Q-learning iteration (with self._learning_algo.train).        
         """
-        # We make sure that the number of elements in the replay memory
-        # is strictly superior to self._replay_start_size before taking 
-        # a random batch and perform training
-        if self._dataset.n_elems <= self._replay_start_size:
-            return
-
-        try:
-            if hasattr(self._learning_algo, 'nstep'):
-                observations, actions, rewards, terminals, rndValidIndices = self._dataset.randomBatch_nstep(self._batch_size, self._learning_algo.nstep, self._exp_priority)
-                loss, loss_ind = self._learning_algo.train(observations, actions, rewards, terminals)
-            else:
-                states, actions, rewards, next_states, terminals, rndValidIndices = self._dataset.randomBatch(self._batch_size, self._exp_priority)
-                loss, loss_ind = self._learning_algo.train(states, actions, rewards, next_states, terminals)
-
-            self._training_loss_averages.append(loss)
-            if (self._exp_priority):
-                self._dataset.updatePriorities(pow(loss_ind,self._exp_priority)+0.0001, rndValidIndices[1])
-
-        except SliceError as e:
-            warn("Training not done - " + str(e), AgentWarning)
+        loss, loss_ind = self._learning_algo.train(self._replay_memory, self._batch_size)
+        self._training_loss_averages.append(loss)
+        print("#", end='')
 
         
     def run(self, n_epochs, epoch_length):
@@ -199,22 +177,26 @@ class MyAgent:
         epoch_length : int
             maximum number of steps for a given epoch
         """
+        print("onStart")
         for c in self.dict_controllers.values(): c.onStart(self)
+        print("fin onStart")
         i = 0
         while i < n_epochs:
             nbr_steps_left=epoch_length
             self._totalNbrEpisode = 0
             self._training_loss_averages = []
-            while nbr_steps_left > 0: # run new episodes until the number of steps left for the epoch has reached 0
-                self._totalNbrEpisode += 1
-                nbr_steps_left = self._runEpisode(nbr_steps_left)
+            nbr_steps_left = self._runEpisode(nbr_steps_left)
             i += 1
+            print("onEpochEnd", i)
             for c in self.dict_controllers.values(): c.onEpochEnd(self)
+            print("fin onEpochEnd", i)
             
         self._env.end()
+        print("onEnd")
         for c in self.dict_controllers.values(): c.onEnd(self)
+        print("fin onEnd")
 
-# TODO a modifier pour suppr mode
+
     def _runEpisode(self, maxSteps):
         """
         This function runs an episode of learning. An episode ends up when the environment method "inTerminalState" 
@@ -225,46 +207,51 @@ class MyAgent:
         maxSteps : int
             maximum number of steps before automatically ending the episode
         """
+        print("start run ep")
         self._in_episode = True
-        #initState = self._env.reset(self._mode)
-        initState = self._env.reset()
-        inputDims = self._env.inputDimensions()
-        for i in range(len(inputDims)):
-            if inputDims[i][0] > 1:
-                self._state[i][1:] = initState[i][1:]
-        
+        self._state = self._env.reset()
         self._Vs_on_last_episode = []
-        is_terminal=False
+        done=False
         reward=0
-        while maxSteps > 0:
-            maxSteps -= 1
-            if(self.gathering_data==True or self._mode!=-1):
-                obs = self._env.observe()
-                
-                for i in range(len(obs)):
-                    self._state[i][0:-1] = self._state[i][1:]
-                    self._state[i][-1] = obs[i]
-                
-                V, action, reward = self._step()
-                
-                self._Vs_on_last_episode.append(V)
-                if self._mode != -1:
-                    self._total_reward += reward
-                
-                is_terminal = self._env.inTerminalState()   # If the transition ends up in a terminal state, mark transition as terminal
-                                                                    # Note that the new obs will not be stored, as it is unnecessary.
-                    
-                if(maxSteps>0):
-                    is_terminal =True # If the episode ends because max number of steps is reached, mark the transition as terminal
-                self._addSample(obs, action, reward, is_terminal)
-            
+        self._totalNbrEpisode +=1
+        while not done:
+            old_state = self._state.copy()
+            action, V = self._policy.action(self._state)
+            #print("start onActionChosen", done)
+            for c in self.dict_controllers.values(): c.onActionChosen(self, action)
+            #print("end onActionChosen", done)
+
+            self._Vs_on_last_episode.append(V)
+
+            reward = 0
+            for _ in range(self.sticky_action):
+                maxSteps -= 1
+                #print("start step")
+                self._state, reward_tmp, done, info = self._env.step(action)
+                #print("end step")
+                reward += reward_tmp
+                if done:
+                    break
+            if len(self._replay_memory) >= self._replay_memory_size:
+                replay_memory.pop(0)
+            self._replay_memory.append({"s": old_state, "a": action, "r": reward, "sprime": self._state, "done": done})
+            self._total_reward += reward
+
+            if(maxSteps<=0):
+                done = True # If the episode ends because max number of steps is reached, mark the transition as terminal
+            if (self.gathering_data == True):
+                self._addSample(old_state, action, reward, done)
+
+            #print("start onActionTaken")
             for c in self.dict_controllers.values(): c.onActionTaken(self)
-            
-            if is_terminal:
-                break
-            
+            #print("end onActionTaken")
+        self._done = done
         self._in_episode = False
-        for c in self.dict_controllers.values(): c.onEpisodeEnd(self, is_terminal, reward)
+        print(maxSteps)
+        print("start onEpisodeEnd")
+        for c in self.dict_controllers.values(): c.onEpisodeEnd(self, done, reward)
+        print("end onEpisodeEnd")
+        print("end run ep")
         return maxSteps
 
         
@@ -285,74 +272,59 @@ class MyAgent:
         action, V = self._chooseAction()
         reward=0
         for i in range(self.sticky_action):
-            reward += self._env.act(action)
+            self._state, reward_tmp, done, info = self._env.step(action)
+            reward += reward_tmp
+            if done:
+                break
 
         return V, action, reward
 
+    # TODO a faire
     def _addSample(self, ponctualObs, action, reward, is_terminal):
-        if self._mode != -1:
+        """if self._mode != -1:
             self._tmp_dataset.addSample(ponctualObs, action, reward, is_terminal, priority=1)
         else:
-            self._dataset.addSample(ponctualObs, action, reward, is_terminal, priority=1)
+            self._dataset.addSample(ponctualObs, action, reward, is_terminal, priority=1)"""
+        pass
 
 
     def setPolicy(self, policy):
         self._policy = policy
 
-    def _chooseAction(self):
-        """if self._mode != -1:
-            # Act according to the test policy if not in training mode
-            action, V = self._test_policy.action(self._state, mode=self._mode, dataset=self._dataset)
+
+    ##############################################################
+    ##############################################################
+    ###########         save and load network         ############
+    ##############################################################
+    ##############################################################
+
+    def dumpNetwork(self, fname, nEpoch=-1):
+        """ Dump the network
+
+        Parameters
+        -----------
+        fname : string
+            Name of the file where the network will be dumped
+        nEpoch : int
+            Epoch number (Optional)
+        """
+        try:
+            os.mkdir("nnets")
+        except Exception:
+            pass
+        basename = "nnets/" + fname
+
+        for f in os.listdir("nnets/"):
+            if fname in f:
+                os.remove("nnets/" + f)
+
+        all_params = self._learning_algo.getAllParams()
+
+        if (nEpoch >= 0):
+            print("=====",basename + ".epoch={}".format(nEpoch))
+            joblib.dump(all_params, basename + ".epoch={}".format(nEpoch))
         else:
-            if self._dataset.n_elems > self._replay_start_size:
-                # follow the train policy
-                action, V = self._train_policy.action(self._state, mode=None, dataset=self._dataset)     #is self._state the only way to store/pass the state?
-            else:
-                # Still gathering initial data: choose dummy action
-                action, V = self._train_policy.randomAction()"""
-        if self._dataset.n_elems > self._replay_start_size:
-            # follow the train policy
-            action, V = self._policy.action(self._state, mode=None,
-                                                  dataset=self._dataset)  # is self._state the only way to store/pass the state?
-        else:
-            # Still gathering initial data: choose dummy action
-            action, V = self._policy.randomAction()
-                
-        for c in self.dict_controllers.values(): c.onActionChosen(self, action)
-        return action, V
-
-        ##############################################################
-        ##############################################################
-        ###########         save and load network         ############
-        ##############################################################
-        ##############################################################
-
-        def dumpNetwork(self, fname, nEpoch=-1):
-            """ Dump the network
-
-            Parameters
-            -----------
-            fname : string
-                Name of the file where the network will be dumped
-            nEpoch : int
-                Epoch number (Optional)
-            """
-            try:
-                os.mkdir("nnets")
-            except Exception:
-                pass
-            basename = "nnets/" + fname
-
-            for f in os.listdir("nnets/"):
-                if fname in f:
-                    os.remove("nnets/" + f)
-
-            all_params = self._learning_algo.getAllParams()
-
-            if (nEpoch >= 0):
-                joblib.dump(all_params, basename + ".epoch={}".format(nEpoch))
-            else:
-                joblib.dump(all_params, basename, compress=True)
+            joblib.dump(all_params, basename, compress=True)
 
         def setNetwork(self, fname, nEpoch=-1):
             """ Set values into the network
@@ -380,6 +352,9 @@ class MyAgent:
     ##############################################################
     ##############################################################
 
+    def setEpsilon(self, eps):
+        self._policy.setEpsilon(eps)
+
     def setLearningRate(self, lr):
         """ Set the learning rate for the gradient descent
         """
@@ -400,21 +375,23 @@ class MyAgent:
         """
         return self._learning_algo.discountFactor()
 
+    def getEpsilon(self):
+        return self._policy.epsilon()
+
     ##############################################################
     ##############################################################
     ###########            controller part            ############
     ##############################################################
     ##############################################################
 
-    def setControllersActive(self, toDisable, active):
+    def setControllersActive(self, key, active):
         """ Activate controller
         """
-        for i in toDisable:
-            self.dict_controllers[i].setActive(active)
+        self.dict_controllers[key].setActive(active)
 
     def attach(self, key ,controller):
         if (isinstance(controller, controllers.Controller)):
-            self.dict_controllers.[key] = controller
+            self.dict_controllers[key] = controller
         else:
             raise TypeError("The object you try to attach is not a Controller.")
 
@@ -439,7 +416,7 @@ class AgentWarning(RuntimeWarning):
         msg  -- explanation of the error
     """
 
-class DataSet(object):
+class DataSet_tmp(object):
     """A replay memory consisting of circular buffers for observations, actions, rewards and terminals."""
 
     def __init__(self, env, random_state=None, max_size=1000000, use_priority=False, only_full_history=True):

@@ -10,6 +10,7 @@ from tensorflow.keras import backend as K
 from deer.base_classes import LearningAlgo as QNetwork
 from .NN_keras import NN # Default Neural network used
 import tensorflow as tf
+from tensorflow.keras.utils import plot_model
 
 class MyQNetwork(QNetwork):
     """
@@ -61,7 +62,8 @@ class MyQNetwork(QNetwork):
 
         Q_net = neural_network(self._batch_size, self._input_dimensions, self._n_actions, self._random_state)
         self._dqn, self.params = Q_net._buildDQN()
-        
+
+        #plot_model(self._dqn, show_shapes=True)
         #self._compile()
 
         #self.q_vals, self.next_params = Q_net._buildDQN()
@@ -146,7 +148,7 @@ class MyQNetwork(QNetwork):
         [print(i.shape, i.dtype) for i in self._dqn.inputs]"""
         a_l = np.array(list(map(lambda x: x['a'], minibatch)))
         r_l = np.array(list(map(lambda x: x['r'], minibatch)))
-        sprime_l = np.asarray(np.array(list(map(lambda x: np.asarray(x['sprime']), minibatch))))
+        sprime_l = np.array(np.array(list(map(lambda x: x['sprime'], minibatch))))
 
         """
         sprime_l = [[np.expand_dims(state, axis=0) for state in state_val] for state_val in sprime_l]
@@ -181,6 +183,8 @@ class MyQNetwork(QNetwork):
         done_l = np.array(list(map(lambda x: x['done'], minibatch)))
         # Find q(s', a') for all possible actions a'. Store in list
         # We'll use the maximum of these values for q-update
+        #sprime_l = [sprime_l[:,i] for i in range(len(sprime_l[0]))]
+        #print("???",[tf.expand_dims(elem, -1) for elem in sprime_l])
         qvals_sprime_l = self._dqn.predict(sprime_l)
         # Find q(s,a) for all possible actions a. Store in list
         target_f = self._dqn.predict(s_l)

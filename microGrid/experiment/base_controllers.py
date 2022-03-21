@@ -105,6 +105,58 @@ class Controller(object):
 
         pass
 
+"""class ConductorControler(Controller):
+
+    def __init__(self, train, test, valide, best, df, lr, eps):
+        self._train = train
+        self._test = test
+        self._valide = valide
+        self._best = best
+        self._df = df
+        self._lr = lr
+        self._eps = eps
+        self._mode = "train"
+
+
+    def onStart(self, agent):
+        if self._active is False:
+            return
+        self._train.onStart(agent)
+        self._test.onStart(agent)
+        self._valide.onStart(agent)
+        self._best.onStart(agent)
+
+    def onEpisodeEnd(self, agent, terminal_reached, reward):
+        if self._active is False:
+            return
+        if self._mode == "train":
+            self._df.onEpisodeEnd()
+            self._lr.onEpisodeEnd()
+            self._eps.onEpisodeEnd()
+        elif self._mode == "validation":
+            self._valide.onEpisodeEnd()
+        elif self._mode == "test":
+            self._test.onEpisodeEnd()
+
+
+    def onEpochEnd(self, agent):
+            if self._active is False:
+                return
+            super().onEpochEnd(agent)
+
+    def onActionChosen(self, agent, action):
+        if self._active is False:
+            return
+        super().onActionChosen(agent, action)
+
+    def onActionTaken(self, agent):
+        if self._active is False:
+            return
+        super().onActionTaken(agent)
+
+    def onEnd(self, agent):
+        super().onEnd(agent)
+"""
 
 class LearningRateController(Controller):
     """A controller that modifies the learning rate periodically upon epochs end.
@@ -221,13 +273,13 @@ class EpsilonController(Controller):
 
     def _reset(self, agent):
         self._count = 0
-        agent._train_policy.setEpsilon(self._init_e)
+        agent.setEpsilon(self._init_e)
         self._e = self._init_e
 
     def _update(self, agent):
         self._count += 1
         if self._periodicity <= 1 or self._count % self._periodicity == 0:
-            agent._train_policy.setEpsilon(self._e)
+            agent.setEpsilon(self._e)
             self._e = max(self._e - self._e_decay, self._e_min)
 
 
@@ -262,7 +314,7 @@ class DiscountFactorController(Controller):
         self._periodicity = periodicity
 
     def onStart(self, agent):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if (self._active == False):
             return
 
         self._epoch_count = 0
@@ -273,7 +325,7 @@ class DiscountFactorController(Controller):
             self._df = self._init_df
 
     def onEpochEnd(self, agent):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if (self._active == False):
             return
 
         self._epoch_count += 1
@@ -328,14 +380,14 @@ class InterleavedTestEpochController(Controller):
         self._epoch_count = 0
 
     def onEpochEnd(self, agent):
-        if (self._active == False) or (agent.mode() not in self._modes):
+        if self._active == False:
             return
 
         mod = self._epoch_count % self._periodicity
         self._epoch_count += 1
         if mod == 0:
             #agent.startMode(self._id, self._epoch_length)
-            agent._run_non_train(n_epochs=1, epoch_length=self._epoch_length)
+            #agent.run(n_epochs=1, epoch_length=self._epoch_length)
             self._summary_counter += 1
 
             if self._show_score:
@@ -343,7 +395,8 @@ class InterleavedTestEpochController(Controller):
                 print("Testing score per episode (id: {}) is {} (average over {} episode(s))".format(self._id, score, nbr_episodes))
                 self.scores.append(score)
             if self._summary_periodicity > 0 and self._summary_counter % self._summary_periodicity == 0:
-                agent.summarizeTestPerformance()
+                #agent.summarizeTestPerformance()
+                print("resumer test a faire")
             #agent.resumeTrainingMode()
 
 
@@ -414,6 +467,7 @@ class TrainerController(Controller):
             self._update(agent)
 
     def _update(self, agent):
+        print(self._count)
         if self._periodicity <= 1 or self._count % self._periodicity == 0:
             agent.train()
         self._count += 1
@@ -487,7 +541,7 @@ class VerboseController(Controller):
             print("{} {}:".format(self._string, self._count + 1))
             print("Learning rate: {}".format(agent._learning_algo.learningRate()))
             print("Discount factor: {}".format(agent._learning_algo.discountFactor()))
-            print("Epsilon: {}".format(agent._train_policy.epsilon()))
+            print("Epsilon: {}".format(agent.getEpsilon()))
         self._count += 1
 
 class FindBestController(Controller):
@@ -537,6 +591,8 @@ class FindBestController(Controller):
     def onEpochEnd(self, agent):
         if (self._active == False):
             return
+        return
+        # TODO a faire
 
         mode = agent.mode()
         if mode == self._validationID:
