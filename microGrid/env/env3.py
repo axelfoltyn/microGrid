@@ -47,7 +47,7 @@ class MicroGrid2(Environment, gym.Env):
 
         reduce_qty_data = int(reduce_qty_data) if reduce_qty_data is not None else int(1)
         length_history = int(length_history) if length_history is not None else int(12)
-        length_history = 1
+        #length_history = 1
         start_history = int(start_history) if start_history is not None else int(0)
         print("reduce_qty_data, length_history, start_history")
         print(reduce_qty_data, length_history, start_history)
@@ -217,7 +217,7 @@ class MicroGrid2(Environment, gym.Env):
 
     ##############################################################
     ##############################################################
-    ###########             deer function             ############
+    ###########             deerv2 function             ############
     ##############################################################
     ##############################################################
 
@@ -369,7 +369,7 @@ class MicroGrid2(Environment, gym.Env):
                 Box(low=np.zeros((self._length_history, 2)), high=np.ones((self._length_history, 2)),
                     dtype=np.float64)
             ])
-        #part deer
+        #part deerv2
         if (self._dist_equinox == 1 and self._pred == 1):
             self._last_ponctual_observation = [0., [0., 0.], 0., [0., 0.]]
             self._input_dimensions = [(1,), (self._length_history, 2), (1,), (1, 2)]

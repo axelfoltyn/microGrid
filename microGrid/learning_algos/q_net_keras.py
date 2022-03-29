@@ -10,7 +10,12 @@ from tensorflow.keras import backend as K
 from deer.base_classes import LearningAlgo as QNetwork
 from .NN_keras import NN # Default Neural network used
 import tensorflow as tf
-from tensorflow.keras.utils import plot_model
+import torch
+import gc
+# Add to leaky code within python_script_being_profiled.py
+from pympler import muppy, summary
+import pandas as pd
+
 
 class MyQNetwork(QNetwork):
     """
@@ -39,7 +44,7 @@ class MyQNetwork(QNetwork):
         Activate or not the double_Q learning.
         More informations in : Hado van Hasselt et al. (2015) - Deep Reinforcement Learning with Double Q-learning.
     neural_network : object, optional
-        default is deer.learning_algos.NN_keras
+        default is deerv2.learning_algos.NN_keras
     """
 
     def __init__(self, environment, rho=0.9, rms_epsilon=0.0001, momentum=0, clip_norm=1, freeze_interval=1000, batch_size=32, update_rule="rmsprop", random_state=np.random.RandomState(), double_Q=False, neural_network=NN):
@@ -61,13 +66,13 @@ class MyQNetwork(QNetwork):
 
 
         Q_net = neural_network(self._batch_size, self._input_dimensions, self._n_actions, self._random_state)
+        print("create model")
         self._dqn, self.params = Q_net._buildDQN()
 
-        #plot_model(self._dqn, show_shapes=True)
-        #self._compile()
+        self._compile()
 
-        #self.q_vals, self.next_params = Q_net._buildDQN()
-        #self.q_vals.compile(optimizer='rmsprop', loss='mse') #The parameters do not matter since training is done on self.q_vals
+        self._dqn_fix, self.next_params = Q_net._buildDQN()
+        self._dqn_fix.compile(optimizer='rmsprop', loss='mse') #The parameters do not matter since training is done on self.q_vals
 
         self._resetQHat()
 
@@ -130,78 +135,88 @@ class MyQNetwork(QNetwork):
         # reset hyper parameter
         if self.update_counter % self._freeze_interval == 0:
             self._resetQHat()
-        loss = []
-
         #Author : https://tomroth.com.au/dqn-simple/
         # and modified to work with this environment
 
         # choose <s,a,r,s',done> experiences randomly from the memory
         minibatch = np.random.choice(replay_memory, minibatch_size, replace=True)
         # create one list containing s, one list containing a, etc
-        s_l = np.array(list(map(lambda x: x['s'], minibatch)))
-        """for elem in s_l:
-            for i in range(len(elem)):
-                np.reshape(elem[i], tuple(list(self._dqn.inputs[i].shape)[1:]))
-        print(self._dqn.inputs)
-        print("s_l", s_l, s_l.shape)
-        for seq in s_l: print(np.array(seq).shape)
-        [print(i.shape, i.dtype) for i in self._dqn.inputs]"""
+        s_l_tmp = np.array(list(map(lambda x: x['s'], minibatch)), dtype='object') #, dtype='object' to remove warnning
+        s_l = [[] for _ in range(len(s_l_tmp[0]))]
+        for elem_l in s_l_tmp:
+            for i, elem in enumerate(elem_l):
+                if hasattr(elem, '__len__'):
+                    s_l[i].append(elem)
+                else:
+                    s_l[i].append([elem])
+        s_l = [np.array(elem, dtype=np.float32) for elem in s_l]
         a_l = np.array(list(map(lambda x: x['a'], minibatch)))
         r_l = np.array(list(map(lambda x: x['r'], minibatch)))
-        sprime_l = np.array(np.array(list(map(lambda x: x['sprime'], minibatch))))
-
-        """
-        sprime_l = [[np.expand_dims(state, axis=0) for state in state_val] for state_val in sprime_l]
-        sprime_l = []
-        for elem in sprime_ltmp:
-            print("ELEM", elem, sprime_l)
-            elem_tmp = []
-            for i in range(len(elem)):
-                if not hasattr(elem[i], '__len__'):
-                    elem_tmp.append(tf.convert_to_tensor(np.array([elem[i]], dtype=np.float32)))
+        sprime_l_tmp = np.array(list(map(lambda x: x['sprime'], minibatch)), dtype='object')
+        sprime_l = [[] for _ in range(len(sprime_l_tmp[0]))]
+        for elem_l in sprime_l_tmp:
+            for i, elem in enumerate(elem_l):
+                if hasattr(elem, '__len__'):
+                    sprime_l[i].append(elem)
                 else:
-                    elem_tmp.append(tf.convert_to_tensor(np.array(elem[i], dtype=np.float32)))
-            sprime_l.append(elem_tmp)
-            print("ELEMMM", elem_tmp, sprime_l)
-            for elem in sprime_l:
-            print("ELEM",elem)
-            for i in range(len(elem)):
-                if not hasattr(elem[i], '__len__'):
-                    elem[i] = np.asarray(np.array(elem[i]), dtype=np.float32)
-                else:
-                    np.reshape(elem[i], tuple([-1] + list(self._dqn.inputs[i].shape)[1:]))
-            print("ELEMMM", elem)"""
-        #sprime_l = np.array(sprime_l)
-        #sprime_l = tf.convert_to_tensor(sprime_ltmp)
-        """print(sprime_l, type(sprime_l))
-        print("sprime_l", sprime_l, sprime_l.shape)
-        for seq in sprime_l: print(np.array(seq).shape)
-        [print(i.shape, i.dtype) for i in self._dqn.inputs]"""
-        #sprime_l = self.flatten(sprime_l)
-
-
+                    sprime_l[i].append([elem])
+        sprime_l = [np.array(elem, dtype=np.float32) for elem in sprime_l]
         done_l = np.array(list(map(lambda x: x['done'], minibatch)))
-        # Find q(s', a') for all possible actions a'. Store in list
-        # We'll use the maximum of these values for q-update
-        #sprime_l = [sprime_l[:,i] for i in range(len(sprime_l[0]))]
-        #print("???",[tf.expand_dims(elem, -1) for elem in sprime_l])
-        qvals_sprime_l = self._dqn.predict(sprime_l)
+        qvals_sprime_l = self._dqn_fix.predict(sprime_l)
         # Find q(s,a) for all possible actions a. Store in list
-        target_f = self._dqn.predict(s_l)
+        q_table = self._dqn.predict(s_l)
         # q-update target
         # For the action we took, use the q-update value
         # For other actions, use the current nnet predicted value
-        for i, (s, a, r, qvals_sprime, done) in enumerate(zip(s_l, a_l, r_l, qvals_sprime_l, done_l)):
-            if not done:
-                target = r + self._df * np.max(qvals_sprime)
-            else:
-                target = r
-            loss.append(target - qvals_sprime)
-            target_f[i][a] = target
+        max_next_q_vals = np.max(qvals_sprime_l, axis=1, keepdims=True)
+        not_terminals = np.invert(done_l).astype(float)
+        target = r_l + not_terminals * self._df * max_next_q_vals.reshape((-1))
+        q_val = q_table[np.arange(self._batch_size), a_l]
+        diff = - q_val + target
+        loss_ind = pow(diff, 2)
+
+        q_table[np.arange(self._batch_size), a_l] = target
         # Update weights of neural network with fit()
         # Loss function is 0 for actions we didn't take
-        self._dqn.fit(s_l, target_f, epochs=1, verbose=0)
-        return np.mean(loss), loss
+        try:
+            #print(len(gc.get_objects()))
+            print("AVANT")
+            all_objects = muppy.get_objects()
+            sum1 = summary.summarize(all_objects)
+            # Prints out a summary of the large objects
+            summary.print_(sum1)
+            # Get references to certain types of objects such as Tensor
+            dataframes = [ao for ao in all_objects if isinstance(ao, tf.Tensor)]
+            for d in dataframes:
+                print(d.columns.values)
+                print(len(d))
+            print(len(gc.get_objects()))
+            self._dqn.fit(s_l, q_table, verbose=0, use_multiprocessing = True)
+            all_objects = muppy.get_objects()
+            sum1 = summary.summarize(all_objects)
+            # Prints out a summary of the large objects
+            summary.print_(sum1)
+            # Get references to certain types of objects such as Tensor
+            dataframes = [ao for ao in all_objects if isinstance(ao, tf.Tensor)]
+            for d in dataframes:
+                print(d.columns.values)
+                print(len(d))
+            # loss = self._dqn.train_on_batch(s_l, q_table)
+            del(q_table)
+            del(qvals_sprime_l)
+            tf.keras.backend.clear_session()
+            gc.collect()
+            print(len(gc.get_objects()))
+            print("APRES")
+
+        except Exception as e:
+            print("s_l", s_l)
+            print("q_table", q_table)
+            print(len(gc.get_objects()))
+            print(self._dqn.summary())
+            raise e
+        torch.cuda.empty_cache()
+        return np.mean(loss_ind)/int(minibatch_size/32), loss_ind
 
 
     def qValues(self, state_val):
@@ -215,9 +230,17 @@ class MyQNetwork(QNetwork):
         -------
         The q values for the provided belief state
         """
-        state_val = tf.expand_dims(state_val, axis=0)
-        return self._dqn.predict(state_val)[0]
-        #return self._dqn.predict([np.expand_dims(state, axis=0) for state in state_val])[0]
+        """sprime_l = [[] for _ in range(len(state_val[0]))]
+        for k, elem_l in enumerate(state_val):
+            for i, elem in enumerate(elem_l):
+                if hasattr(elem, '__len__'):
+                    sprime_l[i].append(elem)
+                else:
+                    sprime_l[i].append([elem])
+        state_val = [np.array(elem, dtype=np.float32) for elem in sprime_l]"""
+        #state_val = tf.expand_dims(state_val, axis=0)
+        #return self._dqn.predict(state_val)[0]
+        return self._dqn.predict([np.expand_dims(state, axis=0) for state in state_val])[0]
 
     def chooseBestAction(self, state, *args, **kwargs):
         """ Get the best action for a pseudo-state
@@ -231,20 +254,23 @@ class MyQNetwork(QNetwork):
         The best action : int
         """        
         q_vals = self.qValues(state)
-
-        return np.argmax(q_vals),np.max(q_vals)
+        action, val = np.argmax(q_vals),np.max(q_vals)
+        del(q_vals)
+        gc.collect()
+        tf.keras.backend.clear_session()
+        return action, val
         
     def _compile(self):
         """ Compile self.q_vals
         """
-        
+        #tf.keras.backend.clear_session()
         if (self._update_rule=="sgd"):
             optimizer = SGD(lr=self._lr, momentum=self._momentum, nesterov=False, clipnorm=self._clip_norm)
         elif (self._update_rule=="rmsprop"):
             optimizer = RMSprop(lr=self._lr, rho=self._rho, epsilon=self._rms_epsilon, clipnorm=self._clip_norm)
         else:
             raise Exception('The update_rule '+self._update_rule+' is not implemented.')
-        
+        #self._dqn.summary()
         self._dqn.compile(optimizer=optimizer, loss='mse')
 
     def _resetQHat(self):

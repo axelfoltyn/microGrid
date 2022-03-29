@@ -15,15 +15,12 @@ from warnings import warn
 from microGrid.experiment import base_controllers as controllers
 from deer.helper import tree
 from deer.policies import EpsilonGreedyPolicy
-from pympler import muppy, summary
-import pandas as pd
-import gc
 
-class MyAgent:
+class MyAgent(object):
     """The NeuralAgent class wraps a learning algorithm (such as a deep Q-network) for training and testing in a given environment.
-    
+
     Attach controllers to it in order to conduct an experiment (when to train the agent, when to test,...).
-    
+
     Parameters
     -----------
     environment : object from class Environment
@@ -33,7 +30,7 @@ class MyAgent:
     replay_memory_size : int
         Size of the replay memory. Default : 1000000
     replay_start_size : int
-        Number of observations (=number of time steps taken) in the replay memory before starting learning. 
+        Number of observations (=number of time steps taken) in the replay memory before starting learning.
         Default: minimum possible according to environment.inputDimensions().
     batch_size : int
         Number of tuples taken into account for each iteration of gradient descent. Default : 32
@@ -47,51 +44,57 @@ class MyAgent:
     test_policy : object from class Policy
         Policy followed when in other modes than training (validation and test modes)
     only_full_history : boolean
-        Whether we wish to train the neural network only on full histories or we wish to fill with zeroes the 
+        Whether we wish to train the neural network only on full histories or we wish to fill with zeroes the
         observations before the beginning of the episode
     """
 
-    def __init__(self, environment, learning_algo, replay_memory_size=1000000, batch_size=32,
+    def __init__(self, environment, learning_algo, replay_memory_size=1000000, replay_start_size=None, batch_size=32,
                  random_state=np.random.RandomState(), exp_priority=0, policy=None, only_full_history=True):
         inputDims = environment.inputDimensions()
-        
-        """if replay_start_size == None:
+
+        if replay_start_size == None:
             replay_start_size = max(inputDims[i][0] for i in range(len(inputDims)))
         elif replay_start_size < max(inputDims[i][0] for i in range(len(inputDims))) :
-            raise AgentError("Replay_start_size should be greater than the biggest history of a state.")"""
-        
+            raise AgentError("Replay_start_size should be greater than the biggest history of a state.")
+
         self.dict_controllers = dict()
         self._env = environment
         self._learning_algo = learning_algo
-        #self._dataset = DataSet(environment, max_size=replay_memory_size, random_state=random_state,
-        #                        use_priority=self._exp_priority, only_full_history=self._only_full_history)
-        self._replay_memory = [] # replay memory holds s, a, r, s'
         self._replay_memory_size = replay_memory_size
+        self._replay_start_size = replay_start_size
         self._batch_size = batch_size
         self._random_state = random_state
         self._exp_priority = exp_priority
         self._only_full_history = only_full_history
-        self._totalNbrEpisode = 0
+        self._dataset = DataSet(environment, max_size=replay_memory_size, random_state=random_state,
+                                use_priority=bool(self._exp_priority), only_full_history=self._only_full_history)
+        self._tmp_dataset = None # Will be created by startTesting() when necessary
+        self._totalModeNbrEpisode = 0
         self._total_reward = 0
         self._training_loss_averages = []
         self._Vs_on_last_episode = []
         self._in_episode = False
+        self._selected_action = -1
         self._state = []
-        self._save_in_replay_buffer = False
         for i in range(len(inputDims)):
             self._state.append(np.zeros(inputDims[i], dtype=float))
-        if (policy==None):
+        for i in range(len(inputDims)):
+            self._state.append(np.zeros(inputDims[i], dtype=float))
+        if (policy is None):
             self._policy = EpsilonGreedyPolicy(learning_algo, environment.nActions(), random_state, 0.1)
         else:
             self._policy = policy
         self.gathering_data=True    # Whether the agent is gathering data or not
         self.sticky_action=1        # Number of times the agent is forced to take the same action as part of one actual time step
 
+    def set_env(self, env, gathering_data=False):
+        self._env = env
+        self.gathering_data = gathering_data
 
-    #def overrideNextAction(self, action):
-    #    """ Possibility to override the chosen action. This possibility should be used on the signal OnActionChosen.
-    #    """
-    #    self._selected_action = action
+    def overrideNextAction(self, action):
+        """ Possibility to override the chosen action. This possibility should be used on the signal OnActionChosen.
+        """
+        self._selected_action = action
 
     def avgBellmanResidual(self):
         """ Returns the average training loss on the epoch
@@ -113,37 +116,63 @@ class MyAgent:
     def totalRewardOverLastTest(self):
         """ Returns the average sum of rewards per episode and the number of episode
         """
-        return self._total_reward / self._totalNbrEpisode, self._totalNbrEpisode
+        return self._total_reward/self._totalModeNbrEpisode, self._totalModeNbrEpisode
 
-
-    def startMode(self, mode, epochLength):
+    """def startMode(self, mode, epochLength):
         if self._in_episode:
             raise AgentError("Trying to start mode while current episode is not yet finished. This method can be "
                              "called only *between* episodes for testing and validation.")
         elif mode == -1:
             raise AgentError("Mode -1 is reserved and means 'training mode'; use resumeTrainingMode() instead.")
         else:
-            self._total_reward = 0.
+            self._mode = mode
+            self._total_mode_reward = 0.
+            del self._tmp_dataset
+            self._tmp_dataset = DataSet(self._environment, self._random_state, max_size=self._replay_memory_size, only_full_history=self._only_full_history)
+
+    def resumeTrainingMode(self):
+        self._mode = -1
+
+    def summarizeTestPerformance(self):
+        if self._mode == -1:
+            raise AgentError("Cannot summarize test performance outside test environment.")
+
+        self._environment.summarizePerformance(self._tmp_dataset, self._learning_algo, train_data_set=self._dataset)"""
 
     def train(self):
         """
-        This function selects a random batch of data (with self._dataset.randomBatch) and performs a 
-        Q-learning iteration (with self._learning_algo.train).        
+        This function selects a random batch of data (with self._dataset.randomBatch) and performs a
+        Q-learning iteration (with self._learning_algo.train).
         """
-        loss, loss_ind = self._learning_algo.train(self._replay_memory, self._batch_size)
-        self._training_loss_averages.append(loss)
-        print(len(self._training_loss_averages), len(self._replay_memory))
+        # We make sure that the number of elements in the replay memory
+        # is strictly superior to self._replay_start_size before taking
+        # a random batch and perform training
+        if self._dataset.n_elems <= self._replay_start_size:
+            return
 
-    def set_env(self, env, gathering_data=False):
-        self._env = env
-        self.gathering_data = gathering_data
+        try:
+            if hasattr(self._learning_algo, 'nstep'):
+                observations, actions, rewards, terminals, rndValidIndices = \
+                    self._dataset.randomBatch_nstep(self._batch_size, self._learning_algo.nstep, self._exp_priority)
+                loss, loss_ind = self._learning_algo.train(observations, actions, rewards, terminals)
+            else:
+                states, actions, rewards, next_states, terminals, rndValidIndices = \
+                    self._dataset.randomBatch(self._batch_size, self._exp_priority)
+                loss, loss_ind = self._learning_algo.train(states, actions, rewards, next_states, terminals)
+
+            self._training_loss_averages.append(loss)
+            if (self._exp_priority):
+                self._dataset.updatePriorities(pow(loss_ind,self._exp_priority)+0.0001, rndValidIndices[1])
+
+        except SliceError as e:
+            warn("Training not done - " + str(e), AgentWarning)
 
     def run(self, n_epochs, epoch_length, restart):
         """
         This function encapsulates the inference and the learning.
         If the agent is in train mode (mode = -1):
-            It starts by calling the controllers method "onStart", 
-            Then it runs a given number of epochs where an epoch is made up of one or many episodes (called with 
+            It starts by calling the controllers method "onStart",
+            Then it runs a given number of epochs where an epoch is made up of one or many episodes (called with
             agent._runEpisode) and where an epoch ends up after the number of steps reaches the argument "epoch_length".
             It ends up by calling the controllers method "end".
         If the agent is on non train mode (mode > -1):
@@ -156,43 +185,26 @@ class MyAgent:
         epoch_length : int
             maximum number of steps for a given epoch
         """
-        self._run(n_epochs, epoch_length, restart)
-            
-    def _run(self, n_epochs, epoch_length, restart):
-        """
-        This function encapsulates the whole process of the learning.
-        It starts by calling the controllers method "onStart", 
-        Then it runs a given number of epochs where an epoch is made up of one or many episodes (called with 
-        agent._runEpisode) and where an epoch ends up after the number of steps reaches the argument "epoch_length".
-        It ends up by calling the controllers method "end".
-
-        Parameters
-        -----------
-        n_epochs : int
-            number of epochs
-        epoch_length : int
-            maximum number of steps for a given epoch
-        """
         if restart:
             for c in self.dict_controllers.values(): c.onStart(self)
         i = 0
         while i < n_epochs:
-            nbr_steps_left=epoch_length
+            print(i)
+            nbr_steps_left = epoch_length
             self._totalNbrEpisode = 0
             self._training_loss_averages = []
             nbr_steps_left = self._runEpisode(nbr_steps_left)
             i += 1
             for c in self.dict_controllers.values(): c.onEpochEnd(self)
 
-        #self._env.end()
+        # self._env.end()
         for c in self.dict_controllers.values(): c.onEnd(self)
-
 
     def _runEpisode(self, maxSteps):
         """
-        This function runs an episode of learning. An episode ends up when the environment method "inTerminalState" 
+        This function runs an episode of learning. An episode ends up when the environment method "inTerminalState"
         returns True (or when the number of steps reaches the argument "maxSteps")
-        
+
         Parameters
         -----------
         maxSteps : int
@@ -201,9 +213,9 @@ class MyAgent:
         self._in_episode = True
         self._state = self._env.reset()
         self._Vs_on_last_episode = []
-        done=False
-        reward=0
-        self._totalNbrEpisode +=1
+        done = False
+        reward = 0
+        self._totalNbrEpisode += 1
         while not done:
             old_state = self._state.copy()
             action, V = self._policy.action(self._state)
@@ -220,81 +232,17 @@ class MyAgent:
                     break
             self._total_reward += reward
 
-            if(maxSteps<=0):
-                done = True # If the episode ends because max number of steps is reached, mark the transition as terminal
-            print("AVANT_ ajout dico")
-            all_objects = muppy.get_objects()
-            sum1 = summary.summarize(all_objects)
-            # Prints out a summary of the large objects
-            summary.print_(sum1)
-            # Get references to certain types of objects such as dataframe
-            dataframes = [ao for ao in all_objects if isinstance(ao, pd.DataFrame)]
-            for d in dataframes:
-                print(d.columns.values)
-                print(len(d))
-            print(len(gc.get_objects()))
+            if (maxSteps <= 0):
+                done = True  # If the episode ends because max number of steps is reached, mark the transition as terminal
 
             if (self.gathering_data == True):
-                #self._dataset.addSample(old_state, action, reward, done, priority=1)
-                if len(self._replay_memory) >= self._replay_memory_size:
-                    self._replay_memory.pop(0)
-                self._replay_memory.append(
-                    {"s": old_state, "a": action, "r": reward, "sprime": self._state, "done": done})
-            all_objects = muppy.get_objects()
-            sum1 = summary.summarize(all_objects)
-            # Prints out a summary of the large objects
-            summary.print_(sum1)
-            # Get references to certain types of objects such as dataframe
-            dataframes = [ao for ao in all_objects if isinstance(ao, pd.DataFrame)]
-            for d in dataframes:
-                print(d.columns.values)
-                print(len(d))
-            gc.collect()
-            print(len(gc.get_objects()))
-            print("APRES ajout dico")
+                self._dataset.addSample(old_state, action, reward, done, priority=1)
+
             for c in self.dict_controllers.values(): c.onActionTaken(self)
         self._done = done
         self._in_episode = False
         for c in self.dict_controllers.values(): c.onEpisodeEnd(self, done, reward)
         return maxSteps
-
-        
-    """def _step(self):
-        
-        This method is called at each time step and performs one action in the environment.
-
-        Returns
-        -------
-        V : float
-            Estimated value function of current state.
-        action : int
-            The id of the action selected by the agent.
-        reward : float
-            Reward obtained for the transition
-        
-
-        action, V = self._chooseAction()
-        reward=0
-        for i in range(self.sticky_action):
-            self._state, reward_tmp, done, info = self._env.step(action)
-            reward += reward_tmp
-            if done:
-                break
-
-        return V, action, reward"""
-
-
-    def _addSample(self, ponctualObs, action, reward, is_terminal):
-        """if self._mode != -1:
-            self._tmp_dataset.addSample(ponctualObs, action, reward, is_terminal, priority=1)
-        else:
-            self._dataset.addSample(ponctualObs, action, reward, is_terminal, priority=1)"""
-        self._dataset.addSample(ponctualObs, action, reward, is_terminal, priority=1)
-
-
-    def setPolicy(self, policy):
-        self._policy = policy
-
 
     ##############################################################
     ##############################################################
@@ -392,7 +340,7 @@ class MyAgent:
         """
         self.dict_controllers[key].setActive(active)
 
-    def attach(self, key ,controller):
+    def attach(self, key, controller):
         if (isinstance(controller, controllers.Controller)):
             self.dict_controllers[key] = controller
         else:
@@ -407,6 +355,7 @@ class AgentError(RuntimeError):
         expr -- input expression in which the error occurred
         msg  -- explanation of the error
     """
+
     def __init__(self, value):
         self.value = value
     def __str__(self):
@@ -418,7 +367,6 @@ class AgentWarning(RuntimeWarning):
         expr -- input expression in which the error occurred
         msg  -- explanation of the error
     """
-
 
 class DataSet(object):
     """A replay memory consisting of circular buffers for observations, actions, rewards and terminals."""
@@ -438,16 +386,16 @@ class DataSet(object):
         """
 
         self._batch_dimensions = env.inputDimensions()
-        self._max_history_size = np.max([self._batch_dimensions[i][0] for i in range(len(self._batch_dimensions))])
+        self._max_history_size = np.max([self._batch_dimensions[i][0] for i in range (len(self._batch_dimensions))])
         self._size = max_size
         self._use_priority = use_priority
         self._only_full_history = only_full_history
-        if (isinstance(env.nActions(), int)):
-            self._actions = CircularBuffer(max_size, dtype="int8")
+        if ( isinstance(env.nActions(),int) ):
+            self._actions      = CircularBuffer(max_size, dtype="int8")
         else:
-            self._actions = CircularBuffer(max_size, dtype='object')
-        self._rewards = CircularBuffer(max_size)
-        self._terminals = CircularBuffer(max_size, dtype="bool")
+            self._actions      = CircularBuffer(max_size, dtype='object')
+        self._rewards      = CircularBuffer(max_size)
+        self._terminals    = CircularBuffer(max_size, dtype="bool")
         if (self._use_priority):
             self._prioritiy_tree = tree.SumTree(max_size)
             self._translation_array = np.zeros(max_size)
@@ -455,16 +403,15 @@ class DataSet(object):
         self._observations = np.zeros(len(self._batch_dimensions), dtype='object')
         # Initialize the observations container if necessary
         for i in range(len(self._batch_dimensions)):
-            self._observations[i] = CircularBuffer(max_size, elemShape=self._batch_dimensions[i][1:],
-                                                   dtype=env.observationType(i))
+            self._observations[i] = CircularBuffer(max_size, elemShape=self._batch_dimensions[i][1:], dtype=env.observationType(i))
 
         if (random_state == None):
             self._random_state = np.random.RandomState()
         else:
             self._random_state = random_state
 
-        self.n_elems = 0
-        self.sticky_action = 1  # Number of times the agent is forced to take the same action as part of one actual time step
+        self.n_elems  = 0
+        self.sticky_action=1        # Number of times the agent is forced to take the same action as part of one actual time step
 
     def actions(self):
         """Get all actions currently in the replay memory, ordered by time where they were taken."""
@@ -498,7 +445,7 @@ class DataSet(object):
     def updatePriorities(self, priorities, rndValidIndices):
         """
         """
-        for i in range(len(rndValidIndices)):
+        for i in range( len(rndValidIndices) ):
             self._prioritiy_tree.update(rndValidIndices[i], priorities[i])
 
     def randomBatch(self, batch_size, use_priority):
@@ -541,66 +488,61 @@ class DataSet(object):
             raise SliceError(
                 "Not enough elements in the dataset to create a "
                 "complete state. {} elements in dataset; requires {}"
-                    .format(self.n_elems, self._max_history_size))
+                .format(self.n_elems, self._max_history_size))
 
         if (self._use_priority):
-            # FIXME : take into account the case where self._only_full_history is false
+            #FIXME : take into account the case where self._only_full_history is false
             rndValidIndices, rndValidIndices_tree = self._randomPrioritizedBatch(batch_size)
             if (rndValidIndices.size == 0):
                 raise SliceError("Could not find a state with full histories")
         else:
             rndValidIndices = np.zeros(batch_size, dtype='int32')
             if (self._only_full_history):
-                for i in range(batch_size):  # TODO: multithread this loop?
-                    rndValidIndices[i] = self._randomValidStateIndex(self._max_history_size + self.sticky_action - 1)
+                for i in range(batch_size): # TODO: multithread this loop?
+                    rndValidIndices[i] = self._randomValidStateIndex(self._max_history_size+self.sticky_action-1)
             else:
-                for i in range(batch_size):  # TODO: multithread this loop?
+                for i in range(batch_size): # TODO: multithread this loop?
                     rndValidIndices[i] = self._randomValidStateIndex(minimum_without_terminal=self.sticky_action)
 
-        actions = self._actions.getSliceBySeq(rndValidIndices)
-        rewards = self._rewards.getSliceBySeq(rndValidIndices)
+
+        actions   = self._actions.getSliceBySeq(rndValidIndices)
+        rewards   = self._rewards.getSliceBySeq(rndValidIndices)
         terminals = self._terminals.getSliceBySeq(rndValidIndices)
 
         states = np.zeros(len(self._batch_dimensions), dtype='object')
         next_states = np.zeros_like(states)
         # We calculate the first terminal index backward in time and set it
         # at maximum to the value self._max_history_size+self.sticky_action-1
-        first_terminals = []
+        first_terminals=[]
         for rndValidIndex in rndValidIndices:
-            first_terminal = 1
-            while first_terminal < self._max_history_size + self.sticky_action - 1:
-                if (self._terminals[rndValidIndex - first_terminal] == True or first_terminal > rndValidIndex):
+            first_terminal=1
+            while first_terminal<self._max_history_size+self.sticky_action-1:
+                if (self._terminals[rndValidIndex-first_terminal]==True or first_terminal>rndValidIndex):
                     break
-                first_terminal += 1
+                first_terminal+=1
             first_terminals.append(first_terminal)
 
         for input in range(len(self._batch_dimensions)):
-            states[input] = np.zeros((batch_size,) + self._batch_dimensions[input],
-                                     dtype=self._observations[input].dtype)
+            states[input] = np.zeros((batch_size,) + self._batch_dimensions[input], dtype=self._observations[input].dtype)
             next_states[input] = np.zeros_like(states[input])
             for i in range(batch_size):
-                slice = self._observations[input].getSlice(
-                    rndValidIndices[i] - self.sticky_action + 2 - min(self._batch_dimensions[input][0],
-                                                                      first_terminals[i] + self.sticky_action - 1),
-                    rndValidIndices[i] + 1)
-                if (len(slice) == len(states[input][i])):
+                slice=self._observations[input].getSlice(rndValidIndices[i]-self.sticky_action+2-min(self._batch_dimensions[input][0],first_terminals[i]+self.sticky_action-1), rndValidIndices[i]+1)
+                if (len(slice)==len(states[input][i])):
                     states[input][i] = slice
                 else:
                     for j in range(len(slice)):
-                        states[input][i][-j - 1] = slice[-j - 1]
-                # If transition leads to terminal, we don't care about next state
+                        states[input][i][-j-1]=slice[-j-1]
+                 # If transition leads to terminal, we don't care about next state
                 if rndValidIndices[i] >= self.n_elems - 1 or terminals[i]:
                     next_states[input][i] = np.zeros_like(states[input][i])
                 else:
-                    slice = self._observations[input].getSlice(
-                        rndValidIndices[i] + 2 - min(self._batch_dimensions[input][0], first_terminals[i] + 1),
-                        rndValidIndices[i] + 2)
-                    if (len(slice) == len(states[input][i])):
+                    slice=self._observations[input].getSlice(rndValidIndices[i]+2-min(self._batch_dimensions[input][0],first_terminals[i]+1), rndValidIndices[i]+2)
+                    if (len(slice)==len(states[input][i])):
                         next_states[input][i] = slice
                     else:
                         for j in range(len(slice)):
-                            next_states[input][i][-j - 1] = slice[-j - 1]
-                    # next_states[input][i] = self._observations[input].getSlice(rndValidIndices[i]+2-min(self._batch_dimensions[input][0],first_terminal), rndValidIndices[i]+2)
+                            next_states[input][i][-j-1]=slice[-j-1]
+                    #next_states[input][i] = self._observations[input].getSlice(rndValidIndices[i]+2-min(self._batch_dimensions[input][0],first_terminal), rndValidIndices[i]+2)
 
         if (self._use_priority):
             return states, actions, rewards, next_states, terminals, [rndValidIndices, rndValidIndices_tree]
@@ -649,79 +591,70 @@ class DataSet(object):
             raise SliceError(
                 "Not enough elements in the dataset to create a "
                 "complete state. {} elements in dataset; requires {}"
-                    .format(self.n_elems, self._max_history_size))
+                .format(self.n_elems, self._max_history_size))
 
         if (self._use_priority):
-            # FIXME : take into account the case where self._only_full_history is false
+            #FIXME : take into account the case where self._only_full_history is false
             rndValidIndices, rndValidIndices_tree = self._randomPrioritizedBatch(batch_size)
             if (rndValidIndices.size == 0):
                 raise SliceError("Could not find a state with full histories")
         else:
             rndValidIndices = np.zeros(batch_size, dtype='int32')
             if (self._only_full_history):
-                for i in range(batch_size):  # TODO: multithread this loop?
-                    rndValidIndices[i] = self._randomValidStateIndex(
-                        self._max_history_size + self.sticky_action * nstep - 1)
+                for i in range(batch_size): # TODO: multithread this loop?
+                    rndValidIndices[i] = self._randomValidStateIndex(self._max_history_size+self.sticky_action*nstep-1)
             else:
-                for i in range(batch_size):  # TODO: multithread this loop?
-                    rndValidIndices[i] = self._randomValidStateIndex(
-                        minimum_without_terminal=self.sticky_action * nstep)
+                for i in range(batch_size): # TODO: multithread this loop?
+                    rndValidIndices[i] = self._randomValidStateIndex(minimum_without_terminal=self.sticky_action*nstep)
 
-        actions = np.zeros((batch_size, (nstep) * self.sticky_action), dtype=int)
-        rewards = np.zeros((batch_size, (nstep) * self.sticky_action))
-        terminals = np.zeros((batch_size, (nstep) * self.sticky_action))
+
+        actions=np.zeros((batch_size,(nstep)*self.sticky_action), dtype=int)
+        rewards=np.zeros((batch_size,(nstep)*self.sticky_action))
+        terminals=np.zeros((batch_size,(nstep)*self.sticky_action))
         for i in range(batch_size):
-            actions[i] = self._actions.getSlice(rndValidIndices[i] - self.sticky_action * nstep + 1,
-                                                rndValidIndices[i] + self.sticky_action)
-            rewards[i] = self._rewards.getSlice(rndValidIndices[i] - self.sticky_action * nstep + 1,
-                                                rndValidIndices[i] + self.sticky_action)
-            terminals[i] = self._terminals.getSlice(rndValidIndices[i] - self.sticky_action * nstep + 1,
-                                                    rndValidIndices[i] + self.sticky_action)
+            actions[i] = self._actions.getSlice(rndValidIndices[i]-self.sticky_action*nstep+1,rndValidIndices[i]+self.sticky_action)
+            rewards[i] = self._rewards.getSlice(rndValidIndices[i]-self.sticky_action*nstep+1,rndValidIndices[i]+self.sticky_action)
+            terminals[i] = self._terminals.getSlice(rndValidIndices[i]-self.sticky_action*nstep+1,rndValidIndices[i]+self.sticky_action)
 
         observations = np.zeros(len(self._batch_dimensions), dtype='object')
         # We calculate the first terminal index backward in time and set it
         # at maximum to the value self._max_history_size+self.sticky_action-1
-        first_terminals = []
+        first_terminals=[]
         for rndValidIndex in rndValidIndices:
-            first_terminal = 1
-            while first_terminal < self._max_history_size + self.sticky_action * nstep - 1:
-                if (self._terminals[rndValidIndex - first_terminal] == True or first_terminal > rndValidIndex):
+            first_terminal=1
+            while first_terminal<self._max_history_size+self.sticky_action*nstep-1:
+                if (self._terminals[rndValidIndex-first_terminal]==True or first_terminal>rndValidIndex):
                     break
-                first_terminal += 1
+                first_terminal+=1
             first_terminals.append(first_terminal)
 
-        batch_dimensions = copy.deepcopy(self._batch_dimensions)
+        batch_dimensions=copy.deepcopy(self._batch_dimensions)
         for input in range(len(self._batch_dimensions)):
-            batch_dimensions[input] = tuple(
-                x + y for x, y in zip(self._batch_dimensions[input], (self.sticky_action * (nstep + 1) - 1, 0, 0)))
-            observations[input] = np.zeros((batch_size,) + batch_dimensions[input],
-                                           dtype=self._observations[input].dtype)
+            batch_dimensions[input]=tuple( x + y for x, y in zip(self._batch_dimensions[input],(self.sticky_action*(nstep+1)-1,0,0)) )
+            observations[input] = np.zeros((batch_size,) + batch_dimensions[input], dtype=self._observations[input].dtype)
             for i in range(batch_size):
-                slice = self._observations[input].getSlice(
-                    rndValidIndices[i] - self.sticky_action * nstep + 2 - min(self._batch_dimensions[input][0],
-                                                                              first_terminals[
-                                                                                  i] - self.sticky_action * nstep + 1),
-                    rndValidIndices[i] + self.sticky_action + 1)
-                if (len(slice) == len(observations[input][i])):
+                slice=self._observations[input].getSlice(rndValidIndices[i]-self.sticky_action*nstep+2-min(self._batch_dimensions[input][0],first_terminals[i]-self.sticky_action*nstep+1), rndValidIndices[i]+self.sticky_action+1)
+                if (len(slice)==len(observations[input][i])):
                     observations[input][i] = slice
                 else:
                     for j in range(len(slice)):
-                        observations[input][i][-j - 1] = slice[-j - 1]
-                # If transition leads to terminal, we don't care about next state
-                if terminals[i][-1]:  # rndValidIndices[i] >= self.n_elems - 1 or terminals[i]:
-                    observations[input][rndValidIndices[i]:rndValidIndices[i] + self.sticky_action + 1] = 0
+                        observations[input][i][-j-1]=slice[-j-1]
+                 # If transition leads to terminal, we don't care about next state
+                if terminals[i][-1]:#rndValidIndices[i] >= self.n_elems - 1 or terminals[i]:
+                    observations[input][rndValidIndices[i]:rndValidIndices[i]+self.sticky_action+1] = 0
 
         if (self._use_priority):
             return observations, actions, rewards, terminals, [rndValidIndices, rndValidIndices_tree]
         else:
             return observations, actions, rewards, terminals, rndValidIndices
 
+
     def _randomValidStateIndex(self, minimum_without_terminal):
         """ Returns the index corresponding to a timestep that is valid
         """
         index_lowerBound = minimum_without_terminal - 1
         # We try out an index in the acceptable range of the replay memory
-        index = self._random_state.randint(index_lowerBound, self.n_elems - 1)
+        index = self._random_state.randint(index_lowerBound, self.n_elems-1)
 
         # Check if slice is valid wrt terminals
         # The selected index may correspond to a terminal transition but not
@@ -729,9 +662,9 @@ class DataSet(object):
         firstTry = index
         startWrapped = False
         while True:
-            i = index - 1
+            i = index-1
             processed = 0
-            for _ in range(minimum_without_terminal - 1):
+            for _ in range(minimum_without_terminal-1):
                 if (i < 0 or self._terminals[i]):
                     break;
 
@@ -751,10 +684,10 @@ class DataSet(object):
 
     def _randomPrioritizedBatch(self, batch_size):
         indices_tree = self._prioritiy_tree.getBatch(batch_size, self._random_state, self)
-        indices_replay_mem = np.zeros(indices_tree.size, dtype='int32')
+        indices_replay_mem=np.zeros(indices_tree.size,dtype='int32')
         for i in range(len(indices_tree)):
-            indices_replay_mem[i] = int(self._translation_array[indices_tree[i]] \
-                                        - self._actions.getLowerBound())
+            indices_replay_mem[i]= int(self._translation_array[indices_tree[i]] \
+                         - self._actions.getLowerBound())
 
         return indices_replay_mem, indices_tree
 
@@ -784,7 +717,7 @@ class DataSet(object):
             if (index >= self._size):
                 ub = self._actions.getUpperBound()
                 true_size = self._actions.getTrueSize()
-                tree_ind = index % self._size
+                tree_ind = index%self._size
                 if (ub == true_size):
                     size_extension = true_size - self._size
                     # New index
@@ -792,7 +725,7 @@ class DataSet(object):
                     tree_ind = -1
                     # Shift translation array
                     self._translation_array -= size_extension + 1
-                tree_ind = np.where(self._translation_array == tree_ind)[0][0]
+                tree_ind = np.where(self._translation_array==tree_ind)[0][0]
             else:
                 tree_ind = index
 
@@ -811,32 +744,27 @@ class DataSet(object):
 class CircularBuffer(object):
     def __init__(self, size, elemShape=(), extension=0.1, dtype="float32"):
         self._size = size
-        self._data = np.zeros((int(size + extension * size),) + elemShape, dtype=dtype)
+        self._data = np.zeros((int(size+extension*size),) + elemShape, dtype=dtype)
         self._trueSize = self._data.shape[0]
-        self._lb = 0
-        self._ub = size
-        self._cur = 0
+        self._lb   = 0
+        self._ub   = size
+        self._cur  = 0
         self.dtype = dtype
 
     def append(self, obj):
-        if self._cur > self._size:  # > instead of >=
+        if self._cur > self._size:  #> instead of >=
             self._lb += 1
             self._ub += 1
 
         if self._ub >= self._trueSize:
             # Rolling array without copying whole array (for memory constraints)
             # basic command: self._data[0:self._size-1] = self._data[self._lb:] OR NEW self._data[0:self._size] = self._data[self._lb-1:]
-            n_splits = 10
+            n_splits=10
             for i in range(n_splits):
-                self._data[i * (self._size) // n_splits:(i + 1) * (self._size) // n_splits] = self._data[
-                                                                                              (self._lb - 1) + i * (
-                                                                                                  self._size) // n_splits:(
-                                                                                                                                      self._lb - 1) + (
-                                                                                                                                      i + 1) * (
-                                                                                                                              self._size) // n_splits]
-            self._lb = 0
-            self._ub = self._size
-            self._cur = self._size  # OLD self._size - 1
+                self._data[i*(self._size)//n_splits:(i+1)*(self._size)//n_splits] = self._data[(self._lb-1)+i*(self._size)//n_splits:(self._lb-1)+(i+1)*(self._size)//n_splits]
+            self._lb  = 0
+            self._ub  = self._size
+            self._cur = self._size #OLD self._size - 1
 
         self._data[self._cur] = obj
         self._cur += 1
@@ -849,9 +777,9 @@ class CircularBuffer(object):
 
     def getSlice(self, start, end=sys.maxsize):
         if end == sys.maxsize:
-            return self._data[self._lb + start:self._cur]
+            return self._data[self._lb+start:self._cur]
         else:
-            return self._data[self._lb + start:self._lb + end]
+            return self._data[self._lb+start:self._lb+end]
 
     def getLowerBound(self):
         return self._lb
@@ -875,6 +803,8 @@ class SliceError(LookupError):
 
     def __init__(self, value):
         self.value = value
-
     def __str__(self):
         return repr(self.value)
+
+if __name__ == "__main__":
+    pass
