@@ -174,6 +174,7 @@ class NeuralAgent(object):
                 loss, loss_ind = self._learning_algo.train(observations, actions, rewards, terminals)
             else:
                 states, actions, rewards, next_states, terminals, rndValidIndices = self._dataset.randomBatch(self._batch_size, self._exp_priority)
+                #print(states, actions, rewards, next_states, terminals, rndValidIndices)
                 loss, loss_ind = self._learning_algo.train(states, actions, rewards, next_states, terminals)
 
             self._training_loss_averages.append(loss)
@@ -252,10 +253,11 @@ class NeuralAgent(object):
         if restart:
             for c in self.dict_controllers.values(): c.onStart(self)
         i = 0
+        self._totalNbrEpisode = 0
+        self._total_reward = 0
         while i < n_epochs:
             nbr_steps_left=epoch_length
             self._training_loss_averages = []
-            self._totalNbrEpisode=0
             while nbr_steps_left > 0: # run new episodes until the number of steps left for the epoch has reached 0
                 self._totalNbrEpisode += 1
                 nbr_steps_left = self._runEpisode(nbr_steps_left)
@@ -268,6 +270,7 @@ class NeuralAgent(object):
     def set_env(self, env, gathering_data=False):
         self._env = env
         self.gathering_data = gathering_data
+
 
     def getEpsilon(self):
         return self._policy.epsilon()
@@ -294,21 +297,23 @@ class NeuralAgent(object):
         reward=0
         while maxSteps > 0:
             maxSteps -= 1
-            if(self.gathering_data==True):
-                obs = self._environment.observe()
-                
-                for i in range(len(obs)):
-                    self._state[i][0:-1] = self._state[i][1:]
-                    self._state[i][-1] = obs[i]
-                
-                V, action, reward = self._step()
-                
-                self._Vs_on_last_episode.append(V)
-                self._total_reward += reward
-                
-                is_terminal = self._environment.inTerminalState()   # If the transition ends up in a terminal state, mark transition as terminal
-                                                                    # Note that the new obs will not be stored, as it is unnecessary.
-                    
+
+            obs = self._environment.observe()
+
+            for i in range(len(obs)):
+                self._state[i][0:-1] = self._state[i][1:]
+                self._state[i][-1] = obs[i]
+
+            V, action, reward = self._step()
+
+            self._Vs_on_last_episode.append(V)
+            self._total_reward += reward
+
+            # If the transition ends up in a terminal state, mark transition as terminal
+            # Note that the new obs will not be stored, as it is unnecessary.
+            is_terminal = self._environment.inTerminalState()
+
+            if (self.gathering_data == True):
                 if(maxSteps>0):
                     self._addSample(obs, action, reward, is_terminal)
                 else:

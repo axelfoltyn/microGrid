@@ -15,18 +15,19 @@ sys.path.append( path.dirname( path.dirname( path.abspath(__file__) ) ) )
 
 from deer.default_parser import process_args
 from microGrid.agent.final_agent import NeuralAgent
-from deer.learning_algos.q_net_keras import MyQNetwork
+from microGrid.learning_algos.q_net_keras import MyQNetwork
 from microGrid.env.final_env import MyEnv as MG_two_storages_env
 #import deer.experiment.base_controllers as bc
 import microGrid.experiment.base_controllers as bc
 from datetime import datetime
+import tensorflow as tf
 
 class Defaults:
     # ----------------------
     # Experiment Parameters
     # ----------------------
     STEPS_PER_EPOCH = 365*24-1
-    EPOCHS = 200
+    EPOCHS = 20#0
     STEPS_PER_TEST = 365*24-1
     PERIOD_BTW_SUMMARY_PERFS = -1  # Set to -1 for avoiding call to env.summarizePerformance
     
@@ -60,7 +61,8 @@ class Defaults:
 
 
 
-if __name__ == "__main__":
+def main():
+    print("tensorflow work with:", tf.test.gpu_device_name())
     logging.basicConfig(level=logging.INFO)
     
     # --- Parse parameters ---
@@ -208,6 +210,7 @@ if __name__ == "__main__":
     #agent.run(parameters.epochs, parameters.steps_per_epoch)
     bestValidationScoreSoFar = -9999999
     validationScores = []
+    testScores = []
     now = datetime.now()
     # dd_mm_YY-H-M-S
     dt_string = now.strftime("%d_%m_%Y-%H-%M-%S")
@@ -216,6 +219,7 @@ if __name__ == "__main__":
     step_before_test = 3
     first_turn = True
     eps = agent.getEpsilon()
+
     for epoch in range(int(parameters.epochs / step_before_test)):
         # train part
         agent.setEpsilon(eps)
@@ -241,19 +245,22 @@ if __name__ == "__main__":
         agent.setControllersActive("lr", False)
         agent.setControllersActive("epsilon", False)
         agent.run(1, parameters.steps_per_epoch, first_turn)
+        score, _ = agent.totalRewardOverLastTest()
+        validationScores.append(score)
         # part test
         agent.setControllersActive("test", True)
         agent.setControllersActive("validation", False)
         # best action each time
         agent.setEpsilon(-1)
         agent.run(1, parameters.steps_per_epoch, first_turn)
-        # part best (change test and validation ?)
         score, _ = agent.totalRewardOverLastTest()
-        validationScores.append(score)
-        if score > bestValidationScoreSoFar:
-            bestValidationScoreSoFar = score
+        testScores.append(score)
+
+        # part best (change test and validation ?)
+        if validationScores[-1] > bestValidationScoreSoFar:
+            bestValidationScoreSoFar = validationScores[-1]
             print("new best", filename)
-            agent.dumpNetwork(filename + "-score-" + str(score), epoch)
+            agent.dumpNetwork(filename + "-score-" + str(validationScores[-1]), epoch)
     print("==========>", validationScores)
     env.end()
     env_test.end()
@@ -267,3 +274,6 @@ if __name__ == "__main__":
     plt.ylabel("Score")
     plt.savefig(basename + "_scores.pdf")
     plt.show()
+
+if __name__ == "__main__":
+    main()
