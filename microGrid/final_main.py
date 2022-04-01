@@ -17,7 +17,6 @@ from deer.default_parser import process_args
 from microGrid.agent.final_agent import NeuralAgent
 from microGrid.learning_algos.q_net_keras import MyQNetwork
 from microGrid.env.final_env import MyEnv as MG_two_storages_env
-#import deer.experiment.base_controllers as bc
 import microGrid.experiment.base_controllers as bc
 from datetime import datetime
 import tensorflow as tf
@@ -27,7 +26,7 @@ class Defaults:
     # Experiment Parameters
     # ----------------------
     STEPS_PER_EPOCH = 365*24-1
-    EPOCHS = 20#0
+    EPOCHS = 50 #200
     STEPS_PER_TEST = 365*24-1
     PERIOD_BTW_SUMMARY_PERFS = -1  # Set to -1 for avoiding call to env.summarizePerformance
     
@@ -80,15 +79,20 @@ def main():
         parameters.steps_per_epoch=parameters.steps_per_epoch-(parameters.steps_per_epoch%(24*4*int(parameters.param1)))-1
 
     # --- Instantiate environment ---
-    env = MG_two_storages_env(rng, parameters.param1, parameters.param2)
+    env = MG_two_storages_env(rng, reduce_qty_data=parameters.param1, length_history=parameters.param2)
     # --- Instantiate reward_function ---
     price_h2 = 0.1  # 0.1euro/kWh of hydrogen
     price_elec_buy = 2.0  # 2euro/kWh
     env.add_reward("flow_H2", lambda x: x["flow_H2"] * price_h2, 1.)
     env.add_reward("buy_energy", lambda x: -x["lack_energy"] * price_elec_buy, 1.)
     env.add_reward("flow_H2_bias", lambda x: x["flow_H2"] * price_h2 + 1, 0)
+
     # --- Instantiate environment test ---
-    env_test = MG_two_storages_env(rng, parameters.param1, parameters.param2)
+    absolute_dir = os.path.dirname(os.path.abspath(__file__))
+    prod = np.load(absolute_dir + "/env/data/BelgiumPV_prod_test.npy")[0:1 * 365 * 24]
+    cons = np.load(absolute_dir + "/env/data/example_nondeterminist_cons_test.npy")[0:1*365*24]
+    env_test = MG_two_storages_env(rng, reduce_qty_data=parameters.param1, length_history=parameters.param2,
+                                   consumption=cons, production=prod)
     # --- Instantiate reward_function ---
     env_test.add_reward("flow_H2", lambda x: x["flow_H2"] * price_h2, 1.)
     env_test.add_reward("buy_energy", lambda x: -x["lack_energy"] * price_elec_buy, 1.)
@@ -183,7 +187,7 @@ def main():
     # to  display the sum of all rewards obtained, hence the showScore=True. Finally, we never want this controller to
     # call the summarizePerformance method of MG_two_storage_env.
     agent.attach("validation", bc.InterleavedTestEpochController(
-        id=env.VALIDATION_MODE,
+        id="validation",
         epoch_length=parameters.steps_per_epoch,
         periodicity=1,
         show_score=True,
@@ -194,7 +198,7 @@ def main():
     # want to display the sum of all rewards obtained, hence the showScore=True. Finally, we want to call the
     # summarizePerformance method of MG_two_storage_env every [parameters.period_btw_summary_perfs] *test* epochs.
     agent.attach("test", bc.InterleavedTestEpochController(
-        id=env.TEST_MODE,
+        id="test",
         epoch_length=parameters.steps_per_test,
         periodicity=1,
         show_score=True,
@@ -220,7 +224,7 @@ def main():
     first_turn = True
     eps = agent.getEpsilon()
 
-    for epoch in range(int(parameters.epochs / step_before_test)):
+    for epoch in range(max(1,int(parameters.epochs / step_before_test))):
         # train part
         agent.setEpsilon(eps)
         agent.set_env(env, True)
@@ -234,8 +238,13 @@ def main():
         agent.setControllersActive("epsilon", True)
         agent.run(step_before_test, parameters.steps_per_epoch, first_turn)
         first_turn = False
+        eps = agent.getEpsilon()
         # part validation
-        agent.set_env(env_test, False)
+
+        # best action each time
+        agent.setEpsilon(-1)
+
+        agent.set_env(env, False)
         agent.setControllersActive("verbose", False)
         agent.setControllersActive("train", False)
         agent.setControllersActive("test", False)
@@ -248,15 +257,15 @@ def main():
         score, _ = agent.totalRewardOverLastTest()
         validationScores.append(score)
         # part test
+        agent.set_env(env_test, False)
         agent.setControllersActive("test", True)
         agent.setControllersActive("validation", False)
-        # best action each time
-        agent.setEpsilon(-1)
+
         agent.run(1, parameters.steps_per_epoch, first_turn)
         score, _ = agent.totalRewardOverLastTest()
         testScores.append(score)
 
-        # part best (change test and validation ?)
+        # part best
         if validationScores[-1] > bestValidationScoreSoFar:
             bestValidationScoreSoFar = validationScores[-1]
             print("new best", filename)
@@ -265,15 +274,28 @@ def main():
     env.end()
     env_test.end()
     # --- Show results ---
-    basename = "scores/" + fname
-    scores = load(basename + "_scores.jldump")
-    plt.plot(range(1, len(scores['vs'])+1), scores['vs'], label="VS", color='b')
-    plt.plot(range(1, len(scores['ts'])+1), scores['ts'], label="TS", color='r')
+    """basename = "scores/" + fname
+    scores = load(basename + "_scores.jldump")"""
+    """plt.plot(range(1, len(scores['vs'])+1), scores['vs'], label="VS", color='b')
+    plt.plot(range(1, len(scores['ts'])+1), scores['ts'], label="TS", color='r')"""
+    x = [i * step_before_test for i in range(1, len(validationScores)+1)]
+    plt.plot(x, validationScores, label="VS", color='b')
+    plt.plot(x, testScores, label="TS", color='r')
+    plt.legend()
+    plt.xlabel("Number of epochs")
+    plt.ylabel("Score")
+    plt.savefig(filename + "_scores.pdf")
+    plt.show()
+
+    data = env_test.get_data()
+    """plt.plot(range(1, len(scores['vs']) + 1), scores['vs'], label="VS", color='b')
+    plt.plot(range(1, len(scores['ts']) + 1), scores['ts'], label="TS", color='r')
     plt.legend()
     plt.xlabel("Number of epochs")
     plt.ylabel("Score")
     plt.savefig(basename + "_scores.pdf")
-    plt.show()
+    plt.show()"""
+    print(data)
 
 if __name__ == "__main__":
     main()
