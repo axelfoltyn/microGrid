@@ -57,9 +57,9 @@ class NeuralAgent(object):
             replay_start_size = max(inputDims[i][0] for i in range(len(inputDims)))
         elif replay_start_size < max(inputDims[i][0] for i in range(len(inputDims))) :
             raise AgentError("Replay_start_size should be greater than the biggest history of a state.")
-        
+
         self.dict_controllers = dict()
-        self._environment = environment
+        self._env = environment
         self._learning_algo = learning_algo
         self._replay_memory_size = replay_memory_size
         self._replay_start_size = replay_start_size
@@ -69,7 +69,7 @@ class NeuralAgent(object):
         self._only_full_history = only_full_history
         self._dataset = DataSet(environment, max_size=replay_memory_size, random_state=random_state,
                                 use_priority=bool(self._exp_priority), only_full_history=self._only_full_history)
-        self._tmp_dataset = None # Will be created by startTesting() when necessary
+        #self._tmp_dataset = None # Will be created by startTesting() when necessary
         self._totalNbrEpisode = 0
         self._total_reward = 0
         self._training_loss_averages = []
@@ -255,6 +255,8 @@ class NeuralAgent(object):
         i = 0
         self._totalNbrEpisode = 0
         self._total_reward = 0
+        self._dataset = DataSet(self._env, max_size=self._replay_memory_size, random_state=self._random_state,
+                                use_priority=bool(self._exp_priority), only_full_history=self._only_full_history)
         while i < n_epochs:
             nbr_steps_left=epoch_length
             self._training_loss_averages = []
@@ -264,7 +266,7 @@ class NeuralAgent(object):
             i += 1
             for c in self.dict_controllers.values(): c.onEpochEnd(self)
         
-        self._environment.end()
+        self._env.end()
         for c in self.dict_controllers.values(): c.onEnd(self)
 
     def set_env(self, env, gathering_data=False):
@@ -286,8 +288,8 @@ class NeuralAgent(object):
             maximum number of steps before automatically ending the episode
         """
         self._in_episode = True
-        initState = self._environment.reset()
-        inputDims = self._environment.inputDimensions()
+        initState = self._env.reset()
+        inputDims = self._env.inputDimensions()
         for i in range(len(inputDims)):
             if inputDims[i][0] > 1:
                 self._state[i][1:] = initState[i][1:]
@@ -298,7 +300,7 @@ class NeuralAgent(object):
         while maxSteps > 0:
             maxSteps -= 1
 
-            obs = self._environment.observe()
+            obs = self._env.observe()
 
             for i in range(len(obs)):
                 self._state[i][0:-1] = self._state[i][1:]
@@ -311,7 +313,7 @@ class NeuralAgent(object):
 
             # If the transition ends up in a terminal state, mark transition as terminal
             # Note that the new obs will not be stored, as it is unnecessary.
-            is_terminal = self._environment.inTerminalState()
+            is_terminal = self._env.inTerminalState()
 
             if (self.gathering_data == True):
                 if(maxSteps>0):
@@ -346,7 +348,7 @@ class NeuralAgent(object):
         action, V = self._chooseAction()
         reward=0
         for i in range(self.sticky_action):
-            reward += self._environment.act(action)
+            reward += self._env.act(action)
 
         return V, action, reward
 

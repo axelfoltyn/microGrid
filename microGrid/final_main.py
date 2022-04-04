@@ -26,7 +26,7 @@ class Defaults:
     # Experiment Parameters
     # ----------------------
     STEPS_PER_EPOCH = 365*24-1
-    EPOCHS = 50 #200
+    EPOCHS = 5 #200
     STEPS_PER_TEST = 365*24-1
     PERIOD_BTW_SUMMARY_PERFS = -1  # Set to -1 for avoiding call to env.summarizePerformance
     
@@ -287,14 +287,19 @@ def main():
     plt.savefig(filename + "_scores.pdf")
     plt.show()
 
-    data = env_test.get_data()
-    """plt.plot(range(1, len(scores['vs']) + 1), scores['vs'], label="VS", color='b')
-    plt.plot(range(1, len(scores['ts']) + 1), scores['ts'], label="TS", color='r')
+    data = env_test.get_data()[-1]
+    print(data.keys())
+    key = "flow_H2"
+
+    plt.plot(range(31*24), data[key][31*24], label=key, color='b')
+    key = "buy_energy"
+    plt.plot(range(31*24), data[key][31*24], label=key, color='r')
+
     plt.legend()
-    plt.xlabel("Number of epochs")
+    plt.xlabel("Number of hours")
     plt.ylabel("Score")
-    plt.savefig(basename + "_scores.pdf")
-    plt.show()"""
+    plt.savefig(filename + "_plots.pdf")
+    plt.show()
     print(data)
 
 if __name__ == "__main__":
