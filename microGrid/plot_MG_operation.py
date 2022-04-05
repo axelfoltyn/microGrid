@@ -1,3 +1,5 @@
+import math
+
 from mpl_toolkits.axes_grid1 import host_subplot
 import mpl_toolkits.axisartist as AA
 import matplotlib.pyplot as plt
@@ -23,18 +25,25 @@ def plot_op(actions, consumption,production,rewards,battery_level, plot_name):
     print (production)
     print ("rewards")
     print (rewards)
-    
-    steps=np.arange(100)
+
+
+    steps=np.arange(len(battery_level))
+    #steps=np.arange(100)
     print (steps)
     print ("battery_level")
     print (battery_level)
     print (consumption)
     print (production)
     print ("demand:")
-    print (consumption-production)
-    
-    steps_long=np.arange(1000)/10.
-    
+    #print (consumption-production)
+    print (np.subtract(consumption, production))
+
+    log_10 = int(math.log10(len(battery_level)))
+
+    steps_long = np.arange(log_10*len(battery_level))*1./log_10
+    print("step & long", steps, steps_long)
+    #steps_long=np.arange(1000)/10.
+
     host = host_subplot(111, axes_class=AA.Axes)
     plt.subplots_adjust(left=0.2, right=0.8)
     
@@ -57,7 +66,8 @@ def plot_op(actions, consumption,production,rewards,battery_level, plot_name):
     par3.axis["right"].toggle(all=True)
     
     
-    host.set_xlim(-0.9, 99)
+    host.set_xlim(-0.9, len(battery_level)-1)
+    #host.set_xlim(-0.9, 99)
     host.set_ylim(0, 20.9)
     
     host.set_xlabel("Time (h)")
@@ -65,12 +75,19 @@ def plot_op(actions, consumption,production,rewards,battery_level, plot_name):
     par1.set_ylabel("Consumption (kW)")
     par2.set_ylabel("Production (kW)")
     par3.set_ylabel("H Actions (kW)")
-    
+
+    """p1, = host.plot(steps, battery_level[:len(steps)], marker='o', lw=1, c='b', alpha=0.8, ls='-',
+                    label='Battery level')
+    p2, = par1.plot(steps_long - 0.9, consumption[:len(steps_long)], lw=3, c='r', alpha=0.5, ls='-',
+                    label='Consumption')
+    p3, = par2.plot(steps_long - 0.9, production[:len(steps_long)], lw=3, c='g', alpha=0.5, ls='-', label='Production')
+    p4, = par3.plot(steps_long, actions[:len(steps_long)], lw=3, c='c', alpha=0.5, ls='-', label='H Actions')"""
+
     p1, = host.plot(steps, battery_level, marker='o', lw=1, c = 'b', alpha=0.8, ls='-', label = 'Battery level')
-    p2, = par1.plot(steps_long-0.9, np.repeat(consumption,10), lw=3, c = 'r', alpha=0.5, ls='-', label = 'Consumption')
-    p3, = par2.plot(steps_long-0.9, np.repeat(production,10), lw=3, c = 'g', alpha=0.5, ls='-', label = 'Production')
-    p4, = par3.plot(steps_long, np.repeat(actions,10), lw=3, c = 'c', alpha=0.5, ls='-', label = 'H Actions')
-    
+    p2, = par1.plot(steps_long-0.9, np.repeat(consumption, log_10), lw=3, c = 'r', alpha=0.5, ls='-', label = 'Consumption')
+    p3, = par2.plot(steps_long-0.9, np.repeat(production, log_10), lw=3, c = 'g', alpha=0.5, ls='-', label = 'Production')
+    p4, = par3.plot(steps_long, np.repeat(actions, log_10), lw=3, c = 'c', alpha=0.5, ls='-', label = 'H Actions')
+
     par1.set_ylim(0, 10.09)
     par2.set_ylim(0, 10.09)
     par3.set_ylim(-1.5, 1.5)

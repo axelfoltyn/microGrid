@@ -19,6 +19,7 @@ from microGrid.learning_algos.q_net_keras import MyQNetwork
 from microGrid.env.final_env import MyEnv as MG_two_storages_env
 import microGrid.experiment.base_controllers as bc
 from datetime import datetime
+from plot_MG_operation import plot_op
 import tensorflow as tf
 
 class Defaults:
@@ -26,7 +27,7 @@ class Defaults:
     # Experiment Parameters
     # ----------------------
     STEPS_PER_EPOCH = 365*24-1
-    EPOCHS = 5 #200
+    EPOCHS = 50 #200
     STEPS_PER_TEST = 365*24-1
     PERIOD_BTW_SUMMARY_PERFS = -1  # Set to -1 for avoiding call to env.summarizePerformance
     
@@ -83,9 +84,9 @@ def main():
     # --- Instantiate reward_function ---
     price_h2 = 0.1  # 0.1euro/kWh of hydrogen
     price_elec_buy = 2.0  # 2euro/kWh
-    env.add_reward("flow_H2", lambda x: x["flow_H2"] * price_h2, 1.)
+    env.add_reward("flow_h2", lambda x: x["flow_H2"] * price_h2, 1.)
     env.add_reward("buy_energy", lambda x: -x["lack_energy"] * price_elec_buy, 1.)
-    env.add_reward("flow_H2_bias", lambda x: x["flow_H2"] * price_h2 + 1, 0)
+    env.add_reward("flow_h2_bias", lambda x: x["flow_H2"] * price_h2 + 1, 0)
 
     # --- Instantiate environment test ---
     absolute_dir = os.path.dirname(os.path.abspath(__file__))
@@ -94,9 +95,20 @@ def main():
     env_test = MG_two_storages_env(rng, reduce_qty_data=parameters.param1, length_history=parameters.param2,
                                    consumption=cons, production=prod)
     # --- Instantiate reward_function ---
-    env_test.add_reward("flow_H2", lambda x: x["flow_H2"] * price_h2, 1.)
+    env_test.add_reward("flow_h2", lambda x: x["flow_H2"] * price_h2, 1.)
     env_test.add_reward("buy_energy", lambda x: -x["lack_energy"] * price_elec_buy, 1.)
-    env_test.add_reward("flow_H2_bias", lambda x: x["flow_H2"] * price_h2 + 1, 0)
+    env_test.add_reward("flow_h2_bias", lambda x: x["flow_H2"] * price_h2 + 1, 0)
+
+    # --- Instantiate environment test ---
+    absolute_dir = os.path.dirname(os.path.abspath(__file__))
+    prod = np.load(absolute_dir + "/env/data/BelgiumPV_prod_test.npy")[0:1 * 365 * 24]
+    cons = np.load(absolute_dir + "/env/data/example_nondeterminist_cons_test.npy")[0:1 * 365 * 24]
+    env_valid = MG_two_storages_env(rng, reduce_qty_data=parameters.param1, length_history=parameters.param2,
+                                   consumption=cons, production=prod)
+    # --- Instantiate reward_function ---
+    env_valid.add_reward("flow_h2", lambda x: x["flow_H2"] * price_h2, 1.)
+    env_valid.add_reward("buy_energy", lambda x: -x["lack_energy"] * price_elec_buy, 1.)
+    env_valid.add_reward("flow_h2_bias", lambda x: x["flow_H2"] * price_h2 + 1, 0)
 
     # --- Instantiate qnetwork ---
     qnetwork = MyQNetwork(
@@ -221,6 +233,7 @@ def main():
     filename = "best" + dt_string
 
     step_before_test = 3
+    step_before_test = min(step_before_test, parameters.epochs)
     first_turn = True
     eps = agent.getEpsilon()
 
@@ -244,7 +257,7 @@ def main():
         # best action each time
         agent.setEpsilon(-1)
 
-        agent.set_env(env, False)
+        agent.set_env(env_valid, False)
         agent.setControllersActive("verbose", False)
         agent.setControllersActive("train", False)
         agent.setControllersActive("test", False)
@@ -278,23 +291,42 @@ def main():
     scores = load(basename + "_scores.jldump")"""
     """plt.plot(range(1, len(scores['vs'])+1), scores['vs'], label="VS", color='b')
     plt.plot(range(1, len(scores['ts'])+1), scores['ts'], label="TS", color='r')"""
+    nb_rep = 50.
     x = [i * step_before_test for i in range(1, len(validationScores)+1)]
-    plt.plot(x, validationScores, label="VS", color='b')
-    plt.plot(x, testScores, label="TS", color='r')
+    x/=nb_rep
+    plt.plot(x, np.repeat(validationScores, nb_rep), label="VS", color='b')
+    plt.plot(x, np.repeat(testScores, nb_rep), label="TS", color='r')
     plt.legend()
     plt.xlabel("Number of epochs")
     plt.ylabel("Score")
     plt.savefig(filename + "_scores.pdf")
     plt.show()
 
+
+
     data = env_test.get_data()[-1]
+    actions= data["action"]
+    consumption = data["consumption"]
+    production = data["production"]
+    rewards = data["rewards"]
+    battery_level= data["battery"]
+    #plot_op(data["action"], data["consumption"], data["production"], data["rewards"], data["battery"], "test.png")
+    i = 0
+    plot_op(actions[0+i:180*24+i],consumption[0+i:180*24+i],production[0+i:180*24+i],rewards[0+i:180*24+i],battery_level[0+i:180*24+i],"testplot_winter_.png")
+
+    i=180*24
+    plot_op(actions[0+i:180*24+i],consumption[0+i:180*24+i],production[0+i:180*24+i],rewards[0+i:180*24+i],battery_level[0+i:180*24+i],"testplot_summer_.png")
+
+    i=360*24
+    plot_op(actions[0+i:180*24+i],consumption[0+i:180*24+i],production[0+i:180*24+i],rewards[0+i:180*24+i],battery_level[0+i:180*24+i],"testplot_winter2_.png")
+
     print(data.keys())
     key = "flow_H2"
-
-    plt.plot(range(31*24), data[key][31*24], label=key, color='b')
+    print(key, len(data[key]))
+    plt.plot(range(31*24), data[key][:31*24], label=key, color='b')
     key = "buy_energy"
-    plt.plot(range(31*24), data[key][31*24], label=key, color='r')
-
+    plt.plot(range(31*24), data[key][:31*24], label=key, color='r')
+    print(key, len(data[key]))
     plt.legend()
     plt.xlabel("Number of hours")
     plt.ylabel("Score")

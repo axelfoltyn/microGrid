@@ -258,10 +258,15 @@ class MyEnv(Environment):
         else:
             done = self.counter >= len(self.production_norm)
         info = {}
-        self._save({"action": action, "battery": self._last_ponctual_observation[0]})
+        reward = np.sum(list(dict_reward.values()))
+
+        self._save({"action": action, "battery": self._last_ponctual_observation[0],
+                    "rewards": reward,"consumption": self.consumption[self.counter-1],
+                    "production": self.production[self.counter-1]})
         self._save(self.dict_param)
         self._save(dict_reward)
-        return copy.deepcopy(self._last_ponctual_observation), np.sum(list(dict_reward.values())), done, info
+
+        return copy.deepcopy(self._last_ponctual_observation), reward, done, info
 
     def _save(self, d_state):
         for key, val in d_state.items():

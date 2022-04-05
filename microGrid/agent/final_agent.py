@@ -255,8 +255,8 @@ class NeuralAgent(object):
         i = 0
         self._totalNbrEpisode = 0
         self._total_reward = 0
-        self._dataset = DataSet(self._env, max_size=self._replay_memory_size, random_state=self._random_state,
-                                use_priority=bool(self._exp_priority), only_full_history=self._only_full_history)
+        """self._dataset = DataSet(self._env, max_size=self._replay_memory_size, random_state=self._random_state,
+                                use_priority=bool(self._exp_priority), only_full_history=self._only_full_history)"""
         while i < n_epochs:
             nbr_steps_left=epoch_length
             self._training_loss_averages = []
