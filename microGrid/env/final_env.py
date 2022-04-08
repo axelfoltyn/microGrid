@@ -191,11 +191,12 @@ class MyEnv(Environment):
         """
 
         true_demand=self.consumption[self.counter-1]-self.production[self.counter-1]
-        
+
         if (action==0):
             ## Energy is taken out of the hydrogen reserve
-            true_energy_avail_from_hydrogen=-self.hydrogen_max_power*self.hydrogen_eta
-            diff_hydrogen=-self.hydrogen_max_power
+            energy = min(self.hydrogen_max_power, self.hydrogen_storage)
+            true_energy_avail_from_hydrogen=-energy*self.hydrogen_eta
+            diff_hydrogen=-energy
         if (action==1):
             ## No energy is taken out of/into the hydrogen reserve
             true_energy_avail_from_hydrogen=0
@@ -262,7 +263,7 @@ class MyEnv(Environment):
 
         self._save({"action": action, "battery": self._last_ponctual_observation[0],
                     "rewards": reward,"consumption": self.consumption[self.counter-1],
-                    "production": self.production[self.counter-1]})
+                    "production": self.production[self.counter-1], "battery_h2": self.hydrogen_storage})
         self._save(self.dict_param)
         self._save(dict_reward)
 
@@ -318,11 +319,12 @@ class MyEnv(Environment):
         """
         return the test result and the list of test values not used for training
         """
-        res = dict()
+        """res = dict()
         for key, fn in self.dict_reward.items():
             val_fn = fn(self.dict_param)
             res[key] = val_fn * self.dict_coeff[key]
-        return res
+        return res"""
+        return {key:fn(self.dict_param) * self.dict_coeff[key] for key, fn in self.dict_reward.items()}
 
     def get_data(self):
         return self.save_state

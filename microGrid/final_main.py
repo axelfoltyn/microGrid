@@ -8,6 +8,7 @@ import numpy as np
 from joblib import hash, dump, load
 import os
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 import sys
 from os import path
@@ -27,7 +28,7 @@ class Defaults:
     # Experiment Parameters
     # ----------------------
     STEPS_PER_EPOCH = 365*24-1
-    EPOCHS = 50 #200
+    EPOCHS = 60 #200
     STEPS_PER_TEST = 365*24-1
     PERIOD_BTW_SUMMARY_PERFS = -1  # Set to -1 for avoiding call to env.summarizePerformance
     
@@ -40,9 +41,9 @@ class Defaults:
     # DQN Agent parameters:
     # ----------------------
     UPDATE_RULE = 'rmsprop'
-    LEARNING_RATE = 0.0002
+    LEARNING_RATE = 0.002
     LEARNING_RATE_DECAY = 0.99
-    DISCOUNT = 0.9
+    DISCOUNT = 0.99
     DISCOUNT_INC = 0.99
     DISCOUNT_MAX = 0.98
     RMS_DECAY = 0.9
@@ -155,7 +156,7 @@ def main():
 
     # Every epoch end, one has the possibility to modify the learning rate using a LearningRateController. Here we
     # wish to update the learning rate after every training epoch (periodicity=1), according to the parameters given.
-    agent.attach("lr", bc.LearningRateController(
+    """agent.attach("lr", bc.LearningRateController(
         initial_learning_rate=parameters.learning_rate,
         learning_rate_decay=parameters.learning_rate_decay,
         periodicity=1))
@@ -165,7 +166,9 @@ def main():
         initial_discount_factor=parameters.discount,
         discount_factor_growth=parameters.discount_inc,
         discount_factor_max=parameters.discount_max,
-        periodicity=1))
+        periodicity=1))"""
+    agent.setLearningRate(parameters.learning_rate)
+    agent.setDiscountFactor(parameters.discount)
 
     # As for the discount factor and the learning rate, one can update periodically the parameter of the epsilon-greedy
     # policy implemented by the agent. This controllers has a bit more capabilities, as it allows one to choose more
@@ -209,12 +212,12 @@ def main():
     # epochs), we also wish to interleave a "test epoch" between each training epoch. For each test epoch, we also
     # want to display the sum of all rewards obtained, hence the showScore=True. Finally, we want to call the
     # summarizePerformance method of MG_two_storage_env every [parameters.period_btw_summary_perfs] *test* epochs.
-    agent.attach("test", bc.InterleavedTestEpochController(
+    """agent.attach("test", bc.InterleavedTestEpochController(
         id="test",
         epoch_length=parameters.steps_per_test,
         periodicity=1,
         show_score=True,
-        summarize_every=parameters.period_btw_summary_perfs))
+        summarize_every=parameters.period_btw_summary_perfs))"""
     
     # --- Run the experiment ---
     try:
@@ -243,11 +246,11 @@ def main():
         agent.set_env(env, True)
         agent.setControllersActive("verbose", True)
         agent.setControllersActive("train", True)
-        agent.setControllersActive("test", False)
+        #agent.setControllersActive("test", False)
         agent.setControllersActive("validation", False)
 
-        agent.setControllersActive("df", True)
-        agent.setControllersActive("lr", True)
+        """agent.setControllersActive("df", True)
+        agent.setControllersActive("lr", True)"""
         agent.setControllersActive("epsilon", True)
         agent.run(step_before_test, parameters.steps_per_epoch, first_turn)
         first_turn = False
@@ -260,23 +263,23 @@ def main():
         agent.set_env(env_valid, False)
         agent.setControllersActive("verbose", False)
         agent.setControllersActive("train", False)
-        agent.setControllersActive("test", False)
+        #agent.setControllersActive("test", False)
         agent.setControllersActive("validation", True)
 
-        agent.setControllersActive("df", False)
-        agent.setControllersActive("lr", False)
+        """agent.setControllersActive("df", False)
+        agent.setControllersActive("lr", False)"""
         agent.setControllersActive("epsilon", False)
         agent.run(1, parameters.steps_per_epoch, first_turn)
         score, _ = agent.totalRewardOverLastTest()
         validationScores.append(score)
-        # part test
+        """# part test
         agent.set_env(env_test, False)
         agent.setControllersActive("test", True)
         agent.setControllersActive("validation", False)
 
         agent.run(1, parameters.steps_per_epoch, first_turn)
         score, _ = agent.totalRewardOverLastTest()
-        testScores.append(score)
+        testScores.append(score)"""
 
         # part best
         if validationScores[-1] > bestValidationScoreSoFar:
@@ -291,20 +294,11 @@ def main():
     scores = load(basename + "_scores.jldump")"""
     """plt.plot(range(1, len(scores['vs'])+1), scores['vs'], label="VS", color='b')
     plt.plot(range(1, len(scores['ts'])+1), scores['ts'], label="TS", color='r')"""
-    nb_rep = 50.
-    x = [i * step_before_test for i in range(1, len(validationScores)+1)]
-    x/=nb_rep
-    plt.plot(x, np.repeat(validationScores, nb_rep), label="VS", color='b')
-    plt.plot(x, np.repeat(testScores, nb_rep), label="TS", color='r')
-    plt.legend()
-    plt.xlabel("Number of epochs")
-    plt.ylabel("Score")
-    plt.savefig(filename + "_scores.pdf")
-    plt.show()
 
 
 
-    data = env_test.get_data()[-1]
+
+    data = env_valid.get_data()[-1]
     actions= data["action"]
     consumption = data["consumption"]
     production = data["production"]
@@ -312,14 +306,14 @@ def main():
     battery_level= data["battery"]
     #plot_op(data["action"], data["consumption"], data["production"], data["rewards"], data["battery"], "test.png")
     i = 0
-    plot_op(actions[0+i:180*24+i],consumption[0+i:180*24+i],production[0+i:180*24+i],rewards[0+i:180*24+i],battery_level[0+i:180*24+i],"testplot_winter_.png")
-
+    plot_op(actions[0+i:100+i],consumption[0+i:100+i],production[0+i:100+i],rewards[0+i:100+i],battery_level[0+i:100+i],"testplot_winter_.png")
+    plt.show()
     i=180*24
-    plot_op(actions[0+i:180*24+i],consumption[0+i:180*24+i],production[0+i:180*24+i],rewards[0+i:180*24+i],battery_level[0+i:180*24+i],"testplot_summer_.png")
-
+    plot_op(actions[0+i:100+i],consumption[0+i:100+i],production[0+i:100+i],rewards[0+i:100+i],battery_level[0+i:100+i],"testplot_summer_.png")
+    plt.show()
     i=360*24
-    plot_op(actions[0+i:180*24+i],consumption[0+i:180*24+i],production[0+i:180*24+i],rewards[0+i:180*24+i],battery_level[0+i:180*24+i],"testplot_winter2_.png")
-
+    plot_op(actions[0+i:100+i],consumption[0+i:100+i],production[0+i:100+i],rewards[0+i:100+i],battery_level[0+i:100+i],"testplot_winter2_.png")
+    plt.show()
     print(data.keys())
     key = "flow_H2"
     print(key, len(data[key]))
@@ -333,6 +327,38 @@ def main():
     plt.savefig(filename + "_plots.pdf")
     plt.show()
     print(data)
+
+    h = sns.jointplot(x=[battery_level[i] for i in range(len(actions)) if actions[i] == 0],
+                      y=[consumption[i] - production[i] for i in range(len(actions)) if actions[i] == 0],
+                      kind="hist")
+    # JointGrid has a convenience function
+    h.set_axis_labels('charge battery', 'demand', fontsize=16)
+    plt.savefig(filename + "_plots_action0.pdf")
+    plt.show()
+
+    h = sns.jointplot(x=[battery_level[i] for i in range(len(actions)) if actions[i] == 1],
+                      y=[consumption[i] - production[i] for i in range(len(actions)) if actions[i] == 1],
+                      kind="hist")
+    # JointGrid has a convenience function
+    h.set_axis_labels('charge battery', 'demand', fontsize=16)
+    plt.savefig(filename + "_plots_action1.pdf")
+    plt.show()
+
+    h = sns.jointplot(x=[battery_level[i] for i in range(len(actions)) if actions[i] == 2],
+                      y=[consumption[i] - production[i] for i in range(len(actions)) if actions[i] == 2],
+                      kind="hist")
+    # JointGrid has a convenience function
+    h.set_axis_labels('charge battery', 'demand', fontsize=16)
+    plt.savefig(filename + "_plots_action2.pdf")
+    plt.show()
+
+    plt.plot(range(len(validationScores)), np.repeat(validationScores), label="VS", color='b')
+    #plt.plot(x, np.repeat(testScores, nb_rep), label="TS", color='r')
+    plt.legend()
+    plt.xlabel("Number of epochs")
+    plt.ylabel("Score")
+    plt.savefig(filename + "_scores.pdf")
+    plt.show()
 
 if __name__ == "__main__":
     main()

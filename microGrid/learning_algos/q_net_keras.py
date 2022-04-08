@@ -3,6 +3,7 @@ Code for general deep Q-learning using Keras that can take as inputs scalars, ve
 
 .. Author: Vincent Francois-Lavet
 """
+import time
 
 import numpy as np
 from tensorflow.keras.optimizers import SGD,RMSprop
@@ -114,7 +115,6 @@ class MyQNetwork(QNetwork):
         Average loss of the batch training (RMSE)
         Individual (square) losses for each tuple
         """
-        
         if self.update_counter % self._freeze_interval == 0:
             self._resetQHat()
         
@@ -145,7 +145,7 @@ class MyQNetwork(QNetwork):
         # My loss should only take these into account.
         # Workaround here is that many values are already "exact" in this update
         loss=self.q_vals.train_on_batch(states_val.tolist() , q_vals ) 
-                
+
         self.update_counter += 1        
 
         # loss*self._n_actions = np.average(loss_ind)
@@ -162,8 +162,9 @@ class MyQNetwork(QNetwork):
         Returns
         -------
         The q values for the provided belief state
-        """ 
-        return self.q_vals.predict([np.expand_dims(state,axis=0) for state in state_val])[0]
+        """
+        res =self.q_vals.predict([np.expand_dims(state,axis=0) for state in state_val])[0]
+        return res
 
     def chooseBestAction(self, state, *args, **kwargs):
         """ Get the best action for a pseudo-state

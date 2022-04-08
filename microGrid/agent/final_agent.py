@@ -322,7 +322,7 @@ class NeuralAgent(object):
                     self._addSample(obs, action, reward, True)      # If the episode ends because max number of steps is reached, mark the transition as terminal
             
             for c in self.dict_controllers.values(): c.onActionTaken(self)
-            
+
             if is_terminal:
                 break
             
