@@ -177,7 +177,8 @@ class EpsilonController(Controller):
         self._init_e = initial_e
         self._e = initial_e
         self._e_min = e_min
-        self._e_decay = (initial_e - e_min) / e_decays
+        #self._e_decay = (initial_e - e_min) / e_decays
+        self._e_decay = e_decays
         self._periodicity = periodicity
 
         self._on_action = 'action' == evaluate_on

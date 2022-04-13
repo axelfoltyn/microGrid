@@ -22,7 +22,7 @@ import os
 
 class MyEnv(Environment):
     def __init__(self, rng, reduce_qty_data=None, length_history=None, start_history=None,
-                 consumption=None, production=None):
+                 consumption=None, production=None, scale_cons = 2.1, scale_prod = 12000./1000.):
         """ Initialize environment
 
         Arguments:
@@ -76,7 +76,7 @@ class MyEnv(Environment):
         #self.consumption_valid_norm=np.load(absolute_dir + "/data/example_nondeterminist_cons_train.npy")[365*24:2*365*24]
         #self.consumption_test_norm=np.load(absolute_dir + "/data/example_nondeterminist_cons_test.npy")[0:1*365*24]
         # Scale consumption profile in [0,2.1kW] --> average max per day = 1.7kW, average per day is 18.3kWh
-        self.consumption=self.consumption_norm*2.1
+        self.consumption=self.consumption_norm*scale_cons
         #self.consumption_valid=self.consumption_valid_norm*2.1
         #self.consumption_test=self.consumption_test_norm*2.1
 
@@ -96,7 +96,7 @@ class MyEnv(Environment):
         #self.production_valid_norm=np.load(absolute_dir + "/data/BelgiumPV_prod_train.npy")[365*24:2*365*24] #determinist best is 110, "nondeterminist" is 124.9
         #self.production_test_norm=np.load(absolute_dir + "/data/BelgiumPV_prod_test.npy")[0:1*365*24] #determinist best is 76, "nondeterminist" is 75.2
         # Scale production profile : 12KWp (60m^2) et en kWh
-        self.production=self.production_norm*12000./1000.*inc_sizing
+        self.production=self.production_norm*scale_prod*inc_sizing
         #self.production_valid=self.production_valid_norm*12000./1000.*inc_sizing
         #self.production_test=self.production_test_norm*12000/1000*inc_sizing
 

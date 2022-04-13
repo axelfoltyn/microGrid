@@ -4,6 +4,8 @@
 
 import sys
 import logging
+import time
+
 import numpy as np
 from joblib import hash, dump, load
 import os
@@ -22,13 +24,14 @@ import microGrid.experiment.base_controllers as bc
 from datetime import datetime
 from plot_MG_operation import plot_op
 import tensorflow as tf
+import pandas as pd
 
 class Defaults:
     # ----------------------
     # Experiment Parameters
     # ----------------------
     STEPS_PER_EPOCH = 365*24-1
-    EPOCHS = 60 #200
+    EPOCHS = 200
     STEPS_PER_TEST = 365*24-1
     PERIOD_BTW_SUMMARY_PERFS = -1  # Set to -1 for avoiding call to env.summarizePerformance
     
@@ -41,7 +44,7 @@ class Defaults:
     # DQN Agent parameters:
     # ----------------------
     UPDATE_RULE = 'rmsprop'
-    LEARNING_RATE = 0.002
+    LEARNING_RATE = 0.02
     LEARNING_RATE_DECAY = 0.99
     DISCOUNT = 0.99
     DISCOUNT_INC = 0.99
@@ -52,7 +55,7 @@ class Defaults:
     CLIP_NORM = 1.0
     EPSILON_START = 1.0
     EPSILON_MIN = .3
-    EPSILON_DECAY = 500000
+    EPSILON_DECAY = 2.3e-5
     UPDATE_FREQUENCY = 1
     REPLAY_MEMORY_SIZE = 1000000
     BATCH_SIZE = 32
@@ -229,6 +232,7 @@ def main():
     #agent.run(parameters.epochs, parameters.steps_per_epoch)
     bestValidationScoreSoFar = -9999999
     validationScores = []
+    trainScores = []
     testScores = []
     now = datetime.now()
     # dd_mm_YY-H-M-S
@@ -240,52 +244,68 @@ def main():
     first_turn = True
     eps = agent.getEpsilon()
 
-    for epoch in range(max(1,int(parameters.epochs / step_before_test))):
-        # train part
-        agent.setEpsilon(eps)
-        agent.set_env(env, True)
-        agent.setControllersActive("verbose", True)
-        agent.setControllersActive("train", True)
-        #agent.setControllersActive("test", False)
-        agent.setControllersActive("validation", False)
+    patience = 10
+    cycle = 0
+    epoch = 0
+    try:
+        start = time.time()
+        #for epoch in range(max(1,int(parameters.epochs / step_before_test))):
+        while "we don't lose our patience":
+            cycle+=1
+            epoch += 1
+            # train part
+            agent.setEpsilon(eps)
+            agent.set_env(env, True)
+            agent.setControllersActive("verbose", True)
+            agent.setControllersActive("train", True)
+            #agent.setControllersActive("test", False)
+            agent.setControllersActive("validation", False)
 
-        """agent.setControllersActive("df", True)
-        agent.setControllersActive("lr", True)"""
-        agent.setControllersActive("epsilon", True)
-        agent.run(step_before_test, parameters.steps_per_epoch, first_turn)
-        first_turn = False
-        eps = agent.getEpsilon()
-        # part validation
+            #agent.setControllersActive("df", True)
+            #agent.setControllersActive("lr", True)
+            agent.setControllersActive("epsilon", True)
+            agent.run(step_before_test, parameters.steps_per_epoch, first_turn)
+            first_turn = False
+            eps = agent.getEpsilon()
+            score, _ = agent.totalRewardOverLastTest()
+            trainScores.append(score)
 
-        # best action each time
-        agent.setEpsilon(-1)
+            # part validation
+            # best action each time
+            agent.setEpsilon(-1)
 
-        agent.set_env(env_valid, False)
-        agent.setControllersActive("verbose", False)
-        agent.setControllersActive("train", False)
-        #agent.setControllersActive("test", False)
-        agent.setControllersActive("validation", True)
+            agent.set_env(env_valid, False)
+            agent.setControllersActive("verbose", False)
+            agent.setControllersActive("train", False)
+            #agent.setControllersActive("test", False)
+            agent.setControllersActive("validation", True)
 
-        """agent.setControllersActive("df", False)
-        agent.setControllersActive("lr", False)"""
-        agent.setControllersActive("epsilon", False)
-        agent.run(1, parameters.steps_per_epoch, first_turn)
-        score, _ = agent.totalRewardOverLastTest()
-        validationScores.append(score)
-        """# part test
-        agent.set_env(env_test, False)
-        agent.setControllersActive("test", True)
-        agent.setControllersActive("validation", False)
+            #agent.setControllersActive("df", False)
+            #agent.setControllersActive("lr", False)
+            agent.setControllersActive("epsilon", False)
+            agent.run(1, parameters.steps_per_epoch, first_turn)
+            score, _ = agent.totalRewardOverLastTest()
+            validationScores.append(score)
+            """# part test
+            agent.set_env(env_test, False)
+            agent.setControllersActive("test", True)
+            agent.setControllersActive("validation", False)
+    
+            agent.run(1, parameters.steps_per_epoch, first_turn)
+            score, _ = agent.totalRewardOverLastTest()
+            testScores.append(score)"""
 
-        agent.run(1, parameters.steps_per_epoch, first_turn)
-        score, _ = agent.totalRewardOverLastTest()
-        testScores.append(score)"""
-
-        # part best
-        if validationScores[-1] > bestValidationScoreSoFar:
-            bestValidationScoreSoFar = validationScores[-1]
-            print("new best", filename)
-            agent.dumpNetwork(filename + "-score-" + str(validationScores[-1]), epoch)
+            # part best
+            if validationScores[-1] > bestValidationScoreSoFar:
+                cycle = 0
+                bestValidationScoreSoFar = validationScores[-1]
+                print("new best", filename)
+                agent.dumpNetwork(filename + "-score-" + str(validationScores[-1]), epoch)
+            if cycle >= patience:
+                break
+    except KeyboardInterrupt:
+        print('Hello user you have KeyboardInterrupt.')
+    print("temps d'éxécution", time.time() - start)
     print("==========>", validationScores)
     env.end()
     env_test.end()
@@ -326,7 +346,6 @@ def main():
     plt.ylabel("Score")
     plt.savefig(filename + "_plots.pdf")
     plt.show()
-    print(data)
 
     h = sns.jointplot(x=[battery_level[i] for i in range(len(actions)) if actions[i] == 0],
                       y=[consumption[i] - production[i] for i in range(len(actions)) if actions[i] == 0],
@@ -352,12 +371,22 @@ def main():
     plt.savefig(filename + "_plots_action2.pdf")
     plt.show()
 
-    plt.plot(range(len(validationScores)), np.repeat(validationScores), label="VS", color='b')
+    plt.plot(range(len(validationScores)), validationScores, label="validation score", color='b')
+    plt.plot(range(len(trainScores)), trainScores, label="train score", color='r')
     #plt.plot(x, np.repeat(testScores, nb_rep), label="TS", color='r')
     plt.legend()
-    plt.xlabel("Number of epochs")
+    plt.xlabel("Number of cycle")
     plt.ylabel("Score")
     plt.savefig(filename + "_scores.pdf")
+    plt.show()
+    demande = [consumption[i] - production[i] for i in range(len(actions))]
+    print("demande moyenne : ", np.mean(demande))
+    print("demande std : ", np.std(demande))
+
+    corr = pd.DataFrame([data])
+    corr = corr.corr()
+    plt.subplots(figsize=(12, 9))
+    sns.heatmap(corr, annot = True)
     plt.show()
 
 if __name__ == "__main__":
