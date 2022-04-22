@@ -12,7 +12,7 @@ def plot_op(actions, consumption,production,rewards,battery_level, plot_name):
     ####
     
     print ( "In this plot, total score"+str(np.sum(rewards)) )
-    print ( "H:"+str( np.sum(actions)*0.1 ) )
+    """print ( "H:"+str( np.sum(actions)*0.1 ) )
     print ( "-:"+str( np.sum(rewards)-np.sum(actions)*0.1 ) )
     
     print ("battery_level")
@@ -24,19 +24,19 @@ def plot_op(actions, consumption,production,rewards,battery_level, plot_name):
     print ("production")
     print (production)
     print ("rewards")
-    print (rewards)
+    print (rewards)"""
 
 
     steps=np.arange(len(battery_level))
     #steps=np.arange(100)
-    print (steps)
+    """print (steps)
     print ("battery_level")
     print (battery_level)
     print (consumption)
     print (production)
     print ("demand:")
     #print (consumption-production)
-    print (np.subtract(consumption, production))
+    print (np.subtract(consumption, production))"""
 
     log_10 = int(math.log10(len(battery_level)))
 

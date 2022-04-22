@@ -54,7 +54,7 @@ class Defaults:
     MOMENTUM = 0
     CLIP_NORM = 1.0
     EPSILON_START = 1.0
-    EPSILON_MIN = .3
+    EPSILON_MIN = .1
     EPSILON_DECAY = 2.3e-5
     UPDATE_FREQUENCY = 1
     REPLAY_MEMORY_SIZE = 1000000
@@ -383,8 +383,11 @@ def main():
     print("demande moyenne : ", np.mean(demande))
     print("demande std : ", np.std(demande))
 
-    corr = pd.DataFrame([data])
+    print("data",data)
+    corr = pd.DataFrame.from_dict(data)
+    print("pd", corr)
     corr = corr.corr()
+    print("corr", corr)
     plt.subplots(figsize=(12, 9))
     sns.heatmap(corr, annot = True)
     plt.show()

@@ -6,6 +6,8 @@ to specify its behavior in the environment.
 """
 
 import os
+import time
+
 import numpy as np
 import copy
 import sys
@@ -15,6 +17,7 @@ from warnings import warn
 from microGrid.experiment import base_controllers as controllers
 from deer.helper import tree
 from deer.policies import EpsilonGreedyPolicy
+from stable_baselines3 import DQN
 
 class NeuralAgent(object):
     """The NeuralAgent class wraps a learning algorithm (such as a deep Q-network) for training and testing in a given environment.
@@ -61,6 +64,8 @@ class NeuralAgent(object):
         self.dict_controllers = dict()
         self._env = environment
         self._learning_algo = learning_algo
+        self._model = DQN('MlpPolicy', self._env, verbose=1)
+        self._model.learn(-1)
         self._replay_memory_size = replay_memory_size
         self._replay_start_size = replay_start_size
         self._batch_size = batch_size
@@ -77,8 +82,10 @@ class NeuralAgent(object):
         self._in_episode = False
         self._selected_action = -1
         self._state = []
+        self._new_state = []
         for i in range(len(inputDims)):
             self._state.append(np.zeros(inputDims[i], dtype=float))
+            self._new_state.append(np.zeros(inputDims[i], dtype=float))
         if (policy is None):
             self._policy = EpsilonGreedyPolicy(learning_algo, environment.nActions(), random_state, 0.1)
         else:
@@ -87,6 +94,7 @@ class NeuralAgent(object):
         self.sticky_action=1        # Number of times the agent is forced to take the same action as part of one actual time step
 
     def setEpsilon(self, eps):
+        self._epsilon = eps
         self._policy.setEpsilon(eps)
 
     ##############################################################
@@ -165,19 +173,21 @@ class NeuralAgent(object):
         # We make sure that the number of elements in the replay memory
         # is strictly superior to self._replay_start_size before taking 
         # a random batch and perform training
-        if self._dataset.n_elems <= self._replay_start_size:
-            return
-
+        """if self._dataset.n_elems <= self._replay_start_size:
+            return"""
         try:
             if hasattr(self._learning_algo, 'nstep'):
-                observations, actions, rewards, terminals, rndValidIndices = self._dataset.randomBatch_nstep(self._batch_size, self._learning_algo.nstep, self._exp_priority)
-                loss, loss_ind = self._learning_algo.train(observations, actions, rewards, terminals)
+                #observations, actions, rewards, terminals, rndValidIndices = self._dataset.randomBatch_nstep(self._batch_size, self._learning_algo.nstep, self._exp_priority)
+                #loss, loss_ind = self._learning_algo.train(observations, actions, rewards, terminals)
+                self._model.train(-1, batch_size = self._batch_size)
             else:
-                states, actions, rewards, next_states, terminals, rndValidIndices = self._dataset.randomBatch(self._batch_size, self._exp_priority)
+                #states, actions, rewards, next_states, terminals, rndValidIndices = self._dataset.randomBatch(self._batch_size, self._exp_priority)
                 #print(states, actions, rewards, next_states, terminals, rndValidIndices)
-                loss, loss_ind = self._learning_algo.train(states, actions, rewards, next_states, terminals)
+                #loss, loss_ind = self._learning_algo.train(states, actions, rewards, next_states, terminals)
+                self._model.train(-1, batch_size=self._batch_size)
 
-            self._training_loss_averages.append(loss)
+            self._training_loss_averages.append(-1)
+            #self._training_loss_averages.append(loss)
             if (self._exp_priority):
                 self._dataset.updatePriorities(pow(loss_ind,self._exp_priority)+0.0001, rndValidIndices[1])
 
@@ -204,7 +214,9 @@ class NeuralAgent(object):
             if fname in f:
                 os.remove("nnets/" + f)
 
-        all_params = self._learning_algo.getAllParams()
+        #all_params = self._learning_algo.getAllParams()
+        all_params = self._model.get_parameters()
+
 
         if (nEpoch>=0):
             joblib.dump(all_params, basename + ".epoch={}".format(nEpoch))
@@ -229,7 +241,8 @@ class NeuralAgent(object):
         else:
             all_params = joblib.load(basename)
 
-        self._learning_algo.setAllParams(all_params)
+        #self._learning_algo.setAllParams(all_params)
+        self._model.set_parameters(all_params)
 
         
     def run(self, n_epochs, epoch_length, restart):
@@ -288,11 +301,12 @@ class NeuralAgent(object):
             maximum number of steps before automatically ending the episode
         """
         self._in_episode = True
-        initState = self._env.reset()
-        inputDims = self._env.inputDimensions()
+        self._state = self._env.reset()
+        #initState = self._env.reset()
+        """inputDims = self._env.inputDimensions()
         for i in range(len(inputDims)):
             if inputDims[i][0] > 1:
-                self._state[i][1:] = initState[i][1:]
+                self._state[i][1:] = initState[i][1:]"""
         
         self._Vs_on_last_episode = []
         is_terminal=False
@@ -300,15 +314,28 @@ class NeuralAgent(object):
         while maxSteps > 0:
             maxSteps -= 1
 
-            obs = self._env.observe()
+            """obs = self._env.observe()
 
             for i in range(len(obs)):
                 self._state[i][0:-1] = self._state[i][1:]
-                self._state[i][-1] = obs[i]
+                self._state[i][-1] = obs[i]"""
 
-            V, action, reward = self._step()
+            #V, action, reward = self._step()
+            action = self._chooseAction()
+            #action, V = self._chooseAction()
+            reward = 0
+            new_obs = None
+            info = {}
+            for i in range(self.sticky_action):
+                self._new_state, rew, done, info = self._env.step(action)
+                reward += rew
 
-            self._Vs_on_last_episode.append(V)
+            """for i in range(len(new_obs)):
+                self._new_state[i][0:-1] = self._new_state[i][1:]
+                self._new_state[i][-1] = new_obs[i]"""
+
+
+            #self._Vs_on_last_episode.append(V)
             self._total_reward += reward
 
             # If the transition ends up in a terminal state, mark transition as terminal
@@ -316,11 +343,15 @@ class NeuralAgent(object):
             is_terminal = self._env.inTerminalState()
 
             if (self.gathering_data == True):
-                if(maxSteps>0):
+
+                self._model.replay_buffer.add(self.flatten(self._state),
+                                              self.flatten(self._new_state), np.array([action]), np.array([reward]),
+                                              is_terminal or (maxSteps <= 0), [info])
+                """if(maxSteps>0):
                     self._addSample(obs, action, reward, is_terminal)
                 else:
-                    self._addSample(obs, action, reward, True)      # If the episode ends because max number of steps is reached, mark the transition as terminal
-            
+                    self._addSample(obs, action, reward, True)      # If the episode ends because max number of steps is reached, mark the transition as terminal"""
+            self._state = self._new_state
             for c in self.dict_controllers.values(): c.onActionTaken(self)
 
             if is_terminal:
@@ -357,11 +388,28 @@ class NeuralAgent(object):
 
 
     def _chooseAction(self):
-        
-        action, V = self._policy.action(self._state, mode=None, dataset=self._dataset)     #is self._state the only way to store/pass the state?
+        start = time.time()
+        state = self.flatten(self._state)
+        if self._random_state.rand() < self._epsilon:
+            action = self._env.action_space.sample()
+        else:
+            action, _ = self._model.predict(state)
+            #print("choose action", action, "in", time.time() - start, "s")
+        #action, V = self._policy.action(self._state, mode=None, dataset=self._dataset)     #is self._state the only way to store/pass the state?
                 
         for c in self.dict_controllers.values(): c.onActionChosen(self, action)
-        return action, V
+        return action
+        #return action, V
+
+    def flatten(self, x):
+        result = np.array([])
+        for el in x:
+            if hasattr(el, "__iter__") and not isinstance(el, str):
+                result = np.concatenate((result, self.flatten(el))) if result.size > 0 else el
+            else:
+                result = np.append(result, el)
+        return np.array(result)
+
 
 class AgentError(RuntimeError):
     """Exception raised for errors when calling the various Agent methods at wrong times.
@@ -533,7 +581,7 @@ class DataSet(object):
             while first_terminal<self._max_history_size+self.sticky_action-1:
                 if (self._terminals[rndValidIndex-first_terminal]==True or first_terminal>rndValidIndex):
                     break 
-                first_terminal+=1
+                first_terminal += 1
             first_terminals.append(first_terminal)
             
         for input in range(len(self._batch_dimensions)):

@@ -12,17 +12,19 @@ More information can be found in the paper to be published :
 Efficient decision making in stochastic micro-grids using deep reinforcement learning, Vincent Francois-Lavet, David Taralla, Raphael Fonteneau, Damien Ernst
 
 """
-
+import gym
 import numpy as np
 import copy
+from gym.spaces import Discrete, Box, Tuple
 
 from deer.base_classes import Environment
 #from plot_MG_operation import plot_op
 import os
 
-class MyEnv(Environment):
+class MyEnv(Environment, gym.Env):
     def __init__(self, rng, reduce_qty_data=None, length_history=None, start_history=None,
-                 consumption=None, production=None, scale_cons = 2.1, scale_prod = 12000./1000.):
+                 consumption=None, production=None, scale_cons = 2.1, scale_prod = 12000./1000.,
+                 pred = 0, _dist_equinox =0):
         """ Initialize environment
 
         Arguments:
@@ -45,8 +47,8 @@ class MyEnv(Environment):
         print ("reduce_qty_data, length_history, start_history")
         print (reduce_qty_data, length_history, start_history)
         # Defining the type of environment
-        self._dist_equinox=0
-        self._pred=0
+        self._dist_equinox = pred
+        self._pred = _dist_equinox
         self._reduce_qty_data=reduce_qty_data   # Factor by which to artificially reduce the data available (for training+validation)
                                                 # Choices are 1,2,4,8,16
                                                 
@@ -57,14 +59,19 @@ class MyEnv(Environment):
         inc_sizing=1.
         
         if (self._dist_equinox==1 and self._pred==1):
-            self._last_ponctual_observation = [0. ,[0.,0.],0., [0.,0.]]
-            self._input_dimensions = [(1,), (self._length_history,2), (1,),(1,2)]
+            """self._last_ponctual_observation = [0. ,[0.,0.],0., [0.,0.]]
+            self._input_dimensions = [(1,), (self._length_history,2), (1,),(1,2)]"""
+            self._last_ponctual_observation = [0.]+ [0. for _ in range(self._length_history * 2 + 3)]
         elif (self._dist_equinox==1 and self._pred==0):
-            self._last_ponctual_observation = [0. ,[0.,0.],0.]
-            self._input_dimensions = [(1,), (self._length_history,2), (1,)]
+            """self._last_ponctual_observation = [0. ,[0.,0.],0.]
+            self._input_dimensions = [(1,), (self._length_history,2), (1,)]"""
+            self._last_ponctual_observation = [0.]+ [0. for _ in range(self._length_history * 2 + 1)]
         elif (self._dist_equinox==0 and self._pred==0):
-            self._last_ponctual_observation = [0. ,[0.,0.]]
-            self._input_dimensions = [(1,), (self._length_history,2)]
+            """self._last_ponctual_observation = [0. ,[0.,0.]]
+            self._input_dimensions = [(1,), (self._length_history,2)]"""
+            self._last_ponctual_observation = [0.]+ [0. for _ in range(self._length_history * 2)]
+        self._input_dimensions = [(len(self._last_ponctual_observation),)]
+        self._init_gym()
 
         self._rng = rng
 
@@ -152,34 +159,40 @@ class MyEnv(Environment):
         self.save_state.append(dict())
         ### Test 6
         if (self._dist_equinox==1 and self._pred==1):
-            self._last_ponctual_observation = [1., [0., 0.], 0., [0., 0.]]
+            #self._last_ponctual_observation = [1., [0., 0.], 0., [0., 0.]]
+            self._last_ponctual_observation = [1.]+ [0. for _ in range(self._length_history * 2 + 3)]
         elif (self._dist_equinox==1 and self._pred==0):
-            self._last_ponctual_observation = [1., [0., 0.], 0.]
+            #self._last_ponctual_observation = [1., [0., 0.], 0.]
+            self._last_ponctual_observation = [1.]+ [0. for _ in range(self._length_history * 2 + 1)]
         elif (self._dist_equinox==0 and self._pred==0):
-            self._last_ponctual_observation = [1., [0., 0.]]
+            #self._last_ponctual_observation = [1., [0., 0.]]
+            self._last_ponctual_observation = [1.]+ [0. for _ in range(self._length_history * 2)]
 
         self.counter = 1        
         self.hydrogen_storage=0.
 
 
         if (self._dist_equinox==1 and self._pred==1):
-            return [
+            """return [
                         0., 
                         [[0. ,0.] for i in range(self._length_history)],
                         0.,
                         [0.,0.]
-                    ]
+                    ]"""
+            return np.array([0.] + [0. for _ in range(self._length_history * 2 + 3)])
         elif (self._dist_equinox==1 and self._pred==0):
-            return [
+            """return [
                         0., 
                         [[0. ,0.] for i in range(self._length_history)],
                         0.
-                    ]
+                    ]"""
+            return np.array([0.] + [0. for _ in range(self._length_history * 2 + 1)])
         else: #elif (self._dist_equinox==0, self._pred==0):
-            return [
+            """return [
                         0., 
                         [[0. ,0.] for i in range(self._length_history)],
-                    ]
+                    ]"""
+            return np.array([0.] + [0. for _ in range(self._length_history * 2)])
 
     def act(self, action):
         _, reward, _, _ = self.step(action)
@@ -241,16 +254,19 @@ class MyEnv(Environment):
         # self._last_ponctual_observation[2][0] : Prevision (accurate) for the current time step and the next 24hours
         # self._last_ponctual_observation[2][1] : Prevision (accurate) for the current time step and the next 48hours
         ###
-        self._last_ponctual_observation[1][0]=self.consumption_norm[self.counter]
-        self._last_ponctual_observation[1][1]=self.production_norm[self.counter]
-        i=1
+        self._last_ponctual_observation[1] = self.consumption_norm[self.counter]
+        #self._last_ponctual_observation[1][0]=self.consumption_norm[self.counter]
+        self._last_ponctual_observation[2] = self.production_norm[self.counter]
+        #self._last_ponctual_observation[1][1]=self.production_norm[self.counter]
+        i=2
+        #i=1
         if(self._dist_equinox==1):
             i=i+1
             self._last_ponctual_observation[i]=abs(self.counter/24-(365./2))/(365./2) #171 days between 1jan and 21 Jun
         if (self._pred==1):
             i=i+1
-            self._last_ponctual_observation[i][0]=sum(self.production_norm[self.counter:self.counter+24])/24.#*self.rng.uniform(0.75,1.25)
-            self._last_ponctual_observation[i][1]=sum(self.production_norm[self.counter:self.counter+48])/48.#*self.rng.uniform(0.75,1.25)
+            self._last_ponctual_observation[i] = sum(self.production_norm[self.counter:self.counter+24])/24.#*self.rng.uniform(0.75,1.25)
+            self._last_ponctual_observation[i+1] = sum(self.production_norm[self.counter:self.counter+48])/48.#*self.rng.uniform(0.75,1.25)
                                 
         self.counter+=1
         dict_reward = self.my_reward()
@@ -267,7 +283,7 @@ class MyEnv(Environment):
         self._save(self.dict_param)
         self._save(dict_reward)
 
-        return copy.deepcopy(self._last_ponctual_observation), reward, done, info
+        return np.array(copy.deepcopy(self._last_ponctual_observation)), reward, done, info
 
     def _save(self, d_state):
         for key, val in d_state.items():
@@ -328,7 +344,39 @@ class MyEnv(Environment):
 
     def get_data(self):
         return self.save_state
-        
+
+    def _init_gym(self):
+        self.action_space = Discrete(3)
+        if (self._dist_equinox == 1 and self._pred == 1):
+            """self.observation_space = Tuple([
+                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64),
+                Box(low=np.zeros((self._length_history, 2)), high=np.ones((self._length_history, 2)),
+                    dtype=np.float64),
+                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64),
+                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64),
+                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64)
+            ])"""
+            self.observation_space = Box(low=np.zeros((1 + self._length_history * 2 + 3)),
+                                         high=np.ones((1 + self._length_history * 2 + 3)))
+        elif (self._dist_equinox == 1 and self._pred == 0):
+            """self.observation_space = Tuple([
+                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64),
+                Box(low=np.zeros((self._length_history, 2)), high=np.ones((self._length_history, 2)),
+                    dtype=np.float64),
+                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64)
+            ])"""
+            self.observation_space = Box(low=np.zeros((1 + self._length_history * 2 + 1)),
+                                         high=np.ones((1 + self._length_history * 2 + 1)))
+
+        elif (self._dist_equinox == 0 and self._pred == 0):
+            """self.observation_space = Tuple([
+                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64),
+                Box(low=np.zeros((self._length_history, 2)), high=np.ones((self._length_history, 2)),
+                    dtype=np.float64)
+            ])"""
+        self.observation_space = Box(low=np.zeros((1 + self._length_history * 2)),
+                                     high=np.ones((1 + self._length_history * 2)))
+
 def main():
     rng = np.random.RandomState(123456)
     myenv=MyEnv(rng)
