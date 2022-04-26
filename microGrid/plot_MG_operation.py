@@ -41,7 +41,7 @@ def plot_op(actions, consumption,production,rewards,battery_level, plot_name):
     log_10 = int(math.log10(len(battery_level)))
 
     steps_long = np.arange(log_10*len(battery_level))*1./log_10
-    print("step & long", steps, steps_long)
+    #print("step & long", steps, steps_long)
     #steps_long=np.arange(1000)/10.
 
     host = host_subplot(111, axes_class=AA.Axes)

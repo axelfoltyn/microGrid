@@ -24,7 +24,7 @@ import os
 class MyEnv(Environment, gym.Env):
     def __init__(self, rng, reduce_qty_data=None, length_history=None, start_history=None,
                  consumption=None, production=None, scale_cons = 2.1, scale_prod = 12000./1000.,
-                 pred = 0, _dist_equinox =0):
+                 pred = 0, dist_equinox =0, max_ener_buy=None):
         """ Initialize environment
 
         Arguments:
@@ -47,8 +47,8 @@ class MyEnv(Environment, gym.Env):
         print ("reduce_qty_data, length_history, start_history")
         print (reduce_qty_data, length_history, start_history)
         # Defining the type of environment
-        self._dist_equinox = pred
-        self._pred = _dist_equinox
+        self._dist_equinox = dist_equinox
+        self._pred = pred
         self._reduce_qty_data=reduce_qty_data   # Factor by which to artificially reduce the data available (for training+validation)
                                                 # Choices are 1,2,4,8,16
                                                 
@@ -57,6 +57,8 @@ class MyEnv(Environment, gym.Env):
         self._start_history=start_history       # Choice between data that is replicated (choices are in [0,...,self._reduce_qty_data[ )
         
         inc_sizing=1.
+
+        self._max_ener_buy = max_ener_buy
         
         if (self._dist_equinox==1 and self._pred==1):
             """self._last_ponctual_observation = [0. ,[0.,0.],0., [0.,0.]]
@@ -237,7 +239,7 @@ class MyEnv(Environment, gym.Env):
                 self.dict_param["lack_energy"] = (Energy_needed_from_battery -
                                                   self._last_ponctual_observation[0] * self.battery_size)
                 #reward-=(Energy_needed_from_battery-self._last_ponctual_observation[0]*self.battery_size)*2 #2euro/kWh
-                self._last_ponctual_observation[0]=0
+                self._last_ponctual_observation[0] = 0
         elif (Energy_needed_from_battery<0):
         # Surplus of energy --> load the battery
             self.dict_param["waste_energy"] = max(0, (self._last_ponctual_observation[0] * self.battery_size
@@ -250,15 +252,16 @@ class MyEnv(Environment, gym.Env):
         ### Test
         # self._last_ponctual_observation[0] : State of the battery (0=empty, 1=full)
         # self._last_ponctual_observation[1] : Normalized consumption at current time step (-> not available at decision time)
-        # self._last_ponctual_observation[1][1] : Normalized production at current time step (-> not available at decision time)
-        # self._last_ponctual_observation[2][0] : Prevision (accurate) for the current time step and the next 24hours
-        # self._last_ponctual_observation[2][1] : Prevision (accurate) for the current time step and the next 48hours
+        # self._last_ponctual_observation[2] : Normalized production at current time step (-> not available at decision time)
+        # self._last_ponctual_observation[3] : Prevision (accurate) for the current time step and the next 24hours
+        # self._last_ponctual_observation[4] : Prevision (accurate) for the current time step and the next 48hours
         ###
-        self._last_ponctual_observation[1] = self.consumption_norm[self.counter]
-        #self._last_ponctual_observation[1][0]=self.consumption_norm[self.counter]
-        self._last_ponctual_observation[2] = self.production_norm[self.counter]
-        #self._last_ponctual_observation[1][1]=self.production_norm[self.counter]
-        i=2
+        self._last_ponctual_observation[1:self._length_history] = self._last_ponctual_observation[2:self._length_history+1]
+        self._last_ponctual_observation[self._length_history] = self.consumption_norm[self.counter]
+        self._last_ponctual_observation[self._length_history + 1:2 * self._length_history] = \
+            self._last_ponctual_observation[self._length_history + 2: 2 * self._length_history+1]
+        self._last_ponctual_observation[2 * self._length_history] = self.production_norm[self.counter]
+        i=2 * self._length_history
         #i=1
         if(self._dist_equinox==1):
             i=i+1
@@ -374,7 +377,7 @@ class MyEnv(Environment, gym.Env):
                 Box(low=np.zeros((self._length_history, 2)), high=np.ones((self._length_history, 2)),
                     dtype=np.float64)
             ])"""
-        self.observation_space = Box(low=np.zeros((1 + self._length_history * 2)),
+            self.observation_space = Box(low=np.zeros((1 + self._length_history * 2)),
                                      high=np.ones((1 + self._length_history * 2)))
 
 def main():
