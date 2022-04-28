@@ -15,20 +15,29 @@ Efficient decision making in stochastic micro-grids using deep reinforcement lea
 import gym
 import numpy as np
 import copy
-from gym.spaces import Discrete, Box, Tuple
+from gym.spaces import Discrete, Box
 
-from deer.base_classes import Environment
-#from plot_MG_operation import plot_op
 import os
 
-class MyEnv(Environment, gym.Env):
+class MyEnv(gym.Env):
     def __init__(self, rng, reduce_qty_data=None, length_history=None, start_history=None,
                  consumption=None, production=None, scale_cons = 2.1, scale_prod = 12000./1000.,
-                 pred = 0, dist_equinox =0, max_ener_buy=None):
+                 pred = False, dist_equinox = False, max_ener_buy=None, max_ener_sell=None):
         """ Initialize environment
 
         Arguments:
             rng - the numpy random number generator
+            reduce_qty_data - ???
+            length_history - size of the consumption and production history
+            start_history - ???
+            consumption - consumption data (normed value)
+            production - production data (normed value)
+            scale_cons - scale for consumption data
+            scale_prod - scale for production data
+            pred - if we want the future consumption and production in the observations
+            dist_equinox - if we want the delay before the next summer solstice
+            max_ener_buy - max energy we can take outside
+            max_ener_sell - max energy we can give outside
         """
 
         self.save_state = []
@@ -39,13 +48,14 @@ class MyEnv(Environment, gym.Env):
         self.dict_reward = dict()
         self.dict_coeff = dict()
         # init parameter dictionary
+        self.dict_param = dict()
         self._init_dict()
 
         reduce_qty_data=int(reduce_qty_data) if reduce_qty_data is not None else int(1)
         length_history=int(length_history) if length_history is not None else int(12)
         start_history=int(start_history) if start_history is not None else int(0)
-        print ("reduce_qty_data, length_history, start_history")
-        print (reduce_qty_data, length_history, start_history)
+
+
         # Defining the type of environment
         self._dist_equinox = dist_equinox
         self._pred = pred
@@ -55,22 +65,15 @@ class MyEnv(Environment, gym.Env):
         self._length_history=length_history     # Length for the truncature of the history to build the pseudo-state
 
         self._start_history=start_history       # Choice between data that is replicated (choices are in [0,...,self._reduce_qty_data[ )
-        
-        inc_sizing=1.
 
         self._max_ener_buy = max_ener_buy
+        self._max_ener_sell = max_ener_sell
         
-        if (self._dist_equinox==1 and self._pred==1):
-            """self._last_ponctual_observation = [0. ,[0.,0.],0., [0.,0.]]
-            self._input_dimensions = [(1,), (self._length_history,2), (1,),(1,2)]"""
+        if (self._dist_equinox and self._pred):
             self._last_ponctual_observation = [0.]+ [0. for _ in range(self._length_history * 2 + 3)]
-        elif (self._dist_equinox==1 and self._pred==0):
-            """self._last_ponctual_observation = [0. ,[0.,0.],0.]
-            self._input_dimensions = [(1,), (self._length_history,2), (1,)]"""
+        elif (self._dist_equinox and not self._pred):
             self._last_ponctual_observation = [0.]+ [0. for _ in range(self._length_history * 2 + 1)]
-        elif (self._dist_equinox==0 and self._pred==0):
-            """self._last_ponctual_observation = [0. ,[0.,0.]]
-            self._input_dimensions = [(1,), (self._length_history,2)]"""
+        elif (not self._dist_equinox and not self._pred):
             self._last_ponctual_observation = [0.]+ [0. for _ in range(self._length_history * 2)]
         self._input_dimensions = [(len(self._last_ponctual_observation),)]
         self._init_gym()
@@ -101,13 +104,11 @@ class MyEnv(Environment, gym.Env):
         if production is None:
             production = np.load(absolute_dir + "/data/BelgiumPV_prod_train.npy")[0:1*365*24]
         # Get production profile in W/Wp in [0,1]
-        self.production_norm= production
+        self.production_norm = production
         #self.production_valid_norm=np.load(absolute_dir + "/data/BelgiumPV_prod_train.npy")[365*24:2*365*24] #determinist best is 110, "nondeterminist" is 124.9
         #self.production_test_norm=np.load(absolute_dir + "/data/BelgiumPV_prod_test.npy")[0:1*365*24] #determinist best is 76, "nondeterminist" is 75.2
         # Scale production profile : 12KWp (60m^2) et en kWh
-        self.production=self.production_norm*scale_prod*inc_sizing
-        #self.production_valid=self.production_valid_norm*12000./1000.*inc_sizing
-        #self.production_test=self.production_test_norm*12000/1000*inc_sizing
+        self.production=self.production_norm*scale_prod
 
         print ("self.production_train brefore")
         print (self.production)
@@ -127,8 +128,14 @@ class MyEnv(Environment, gym.Env):
         
         if(self._reduce_qty_data!=1):
             for season in range(4):
-                self.production[season*nd_one_seas:(season+1)*nd_one_seas]=np.tile(self.production[int((season+(self._start_history+0.)/self._reduce_qty_data)*nd_one_seas):int((season+(self._start_history+1.)/self._reduce_qty_data)*nd_one_seas)], self._reduce_qty_data)
-                self.production_norm[season*nd_one_seas:(season+1)*nd_one_seas]=np.tile(self.production_norm[int((season+(self._start_history+0.)/self._reduce_qty_data)*nd_one_seas):int((season+(self._start_history+1.)/self._reduce_qty_data)*nd_one_seas)], self._reduce_qty_data)
+                self.production[season*nd_one_seas:(season+1)*nd_one_seas]=np.tile(
+                    self.production[int((season+(self._start_history+0.)/self._reduce_qty_data)*nd_one_seas):
+                                    int((season+(self._start_history+1.)/self._reduce_qty_data)*nd_one_seas)],
+                    self._reduce_qty_data)
+                self.production_norm[season*nd_one_seas:(season+1)*nd_one_seas]=np.tile(
+                    self.production_norm[int((season+(self._start_history+0.)/self._reduce_qty_data)*nd_one_seas):
+                                         int((season+(self._start_history+1.)/self._reduce_qty_data)*nd_one_seas)],
+                    self._reduce_qty_data)
         print ("self.production_train after")
         print (self.production)
 
@@ -138,73 +145,51 @@ class MyEnv(Environment, gym.Env):
         print("Min of the production profile (kW): {}".format(self.min_production))
         print("Max of the production profile (kW): {}".format(self.max_production))
         print("Average production per day train (kWh): {}".format(np.sum(self.production)/self.production.shape[0]*24))
-        #print("Average production per day valid (kWh): {}".format(np.sum(self.production_valid)/self.production_valid.shape[0]*24))
-        #print("Average production per day test (kWh): {}".format(np.sum(self.production_test)/self.production_test.shape[0]*24))
 
-        self.battery_size=15.*inc_sizing
+        self.battery_size=15.
         self.battery_eta=0.9
         
-        self.hydrogen_max_power=1.1*inc_sizing
+        self.hydrogen_max_power=1.1
         self.hydrogen_eta=.65
 
     def _init_dict(self):
-        self.dict_param = dict()
-        self.dict_param["flow_H2"] = 0
-        self.dict_param["lack_energy"] = 0
-        self.dict_param["waste_energy"] = 0
+        self.dict_param["flow_H2"] = 0.
+        self.dict_param["lack_energy"] = 0.
+        self.dict_param["waste_energy"] = 0.
+        self.dict_param["buy_energy"] = 0.
+        self.dict_param["soc"] = 0.
 
     def reset(self):
         """
         Returns:
            current observation (list of k elements)
         """
+        self._init_dict()
         self.save_state.append(dict())
         ### Test 6
-        if (self._dist_equinox==1 and self._pred==1):
-            #self._last_ponctual_observation = [1., [0., 0.], 0., [0., 0.]]
+        if (self._dist_equinox and self._pred):
             self._last_ponctual_observation = [1.]+ [0. for _ in range(self._length_history * 2 + 3)]
-        elif (self._dist_equinox==1 and self._pred==0):
-            #self._last_ponctual_observation = [1., [0., 0.], 0.]
+        elif (self._dist_equinox and not self._pred):
             self._last_ponctual_observation = [1.]+ [0. for _ in range(self._length_history * 2 + 1)]
-        elif (self._dist_equinox==0 and self._pred==0):
-            #self._last_ponctual_observation = [1., [0., 0.]]
+        elif (not self._dist_equinox and not self._pred):
             self._last_ponctual_observation = [1.]+ [0. for _ in range(self._length_history * 2)]
 
         self.counter = 1        
         self.hydrogen_storage=0.
 
 
-        if (self._dist_equinox==1 and self._pred==1):
-            """return [
-                        0., 
-                        [[0. ,0.] for i in range(self._length_history)],
-                        0.,
-                        [0.,0.]
-                    ]"""
+        if (self._dist_equinox and self._pred):
             return np.array([0.] + [0. for _ in range(self._length_history * 2 + 3)])
-        elif (self._dist_equinox==1 and self._pred==0):
-            """return [
-                        0., 
-                        [[0. ,0.] for i in range(self._length_history)],
-                        0.
-                    ]"""
+        elif (self._dist_equinox and not self._pred):
             return np.array([0.] + [0. for _ in range(self._length_history * 2 + 1)])
-        else: #elif (self._dist_equinox==0, self._pred==0):
-            """return [
-                        0., 
-                        [[0. ,0.] for i in range(self._length_history)],
-                    ]"""
+        else: #elif (not self._dist_equinox, not self._pred):
             return np.array([0.] + [0. for _ in range(self._length_history * 2)])
-
-    def act(self, action):
-        _, reward, _, _ = self.step(action)
-        return reward
 
     def step(self, action):
         """
         Perform one time step on the environment
         """
-
+        self._init_dict()
         true_demand=self.consumption[self.counter-1]-self.production[self.counter-1]
 
         if (action==0):
@@ -238,24 +223,24 @@ class MyEnv(Environment, gym.Env):
             # Otherwise: use what is left and then penalty
                 self.dict_param["lack_energy"] = (Energy_needed_from_battery -
                                                   self._last_ponctual_observation[0] * self.battery_size)
-                #reward-=(Energy_needed_from_battery-self._last_ponctual_observation[0]*self.battery_size)*2 #2euro/kWh
                 self._last_ponctual_observation[0] = 0
+            if self._max_ener_buy is not None:
+                self.dict_param["buy_energy"] = min(self._max_ener_buy, self.dict_param["lack_energy"])
+            else:
+                self.dict_param["buy_energy"] = self.dict_param["lack_energy"]
+            self.dict_param["lack_energy"] -= self.dict_param["buy_energy"]
         elif (Energy_needed_from_battery<0):
         # Surplus of energy --> load the battery
             self.dict_param["waste_energy"] = max(0, (self._last_ponctual_observation[0] * self.battery_size
                                                   - Energy_needed_from_battery * self.battery_eta) - self.battery_size)
-            self._last_ponctual_observation[0]=min(1.,self._last_ponctual_observation[0]-Energy_needed_from_battery/self.battery_size*self.battery_eta)
-                    
-        #print "new self._last_ponctual_observation[0]"
-        #print self._last_ponctual_observation[0]
-        
-        ### Test
-        # self._last_ponctual_observation[0] : State of the battery (0=empty, 1=full)
-        # self._last_ponctual_observation[1] : Normalized consumption at current time step (-> not available at decision time)
-        # self._last_ponctual_observation[2] : Normalized production at current time step (-> not available at decision time)
-        # self._last_ponctual_observation[3] : Prevision (accurate) for the current time step and the next 24hours
-        # self._last_ponctual_observation[4] : Prevision (accurate) for the current time step and the next 48hours
-        ###
+            self._last_ponctual_observation[0] = min(1.,
+                    self._last_ponctual_observation[0]-Energy_needed_from_battery/self.battery_size*self.battery_eta)
+        if self._max_ener_buy is not None:
+            self.dict_param["sell_energy"] = min(self._max_ener_sell, self.dict_param["waste_energy"])
+        else:
+            self.dict_param["sell_energy"] = self.dict_param["waste_energy"]
+        self.dict_param["waste_energy"] -= self.dict_param["sell_energy"]
+
         self._last_ponctual_observation[1:self._length_history] = self._last_ponctual_observation[2:self._length_history+1]
         self._last_ponctual_observation[self._length_history] = self.consumption_norm[self.counter]
         self._last_ponctual_observation[self._length_history + 1:2 * self._length_history] = \
@@ -263,24 +248,26 @@ class MyEnv(Environment, gym.Env):
         self._last_ponctual_observation[2 * self._length_history] = self.production_norm[self.counter]
         i=2 * self._length_history
         #i=1
-        if(self._dist_equinox==1):
+        if(self._dist_equinox):
             i=i+1
             self._last_ponctual_observation[i]=abs(self.counter/24-(365./2))/(365./2) #171 days between 1jan and 21 Jun
-        if (self._pred==1):
+        if (self._pred):
             i=i+1
             self._last_ponctual_observation[i] = sum(self.production_norm[self.counter:self.counter+24])/24.#*self.rng.uniform(0.75,1.25)
             self._last_ponctual_observation[i+1] = sum(self.production_norm[self.counter:self.counter+48])/48.#*self.rng.uniform(0.75,1.25)
                                 
         self.counter+=1
         dict_reward = self.my_reward()
-        if self._pred == 1:
+        if self._pred:
             done = self.counter + 24 >= len(self.production_norm)
         else:
             done = self.counter >= len(self.production_norm)
         info = {}
         reward = np.sum(list(dict_reward.values()))
 
-        self._save({"action": action, "battery": self._last_ponctual_observation[0],
+        self.dict_param["soc"] = self._last_ponctual_observation[0]
+
+        self._save({"action": action,
                     "rewards": reward,"consumption": self.consumption[self.counter-1],
                     "production": self.production[self.counter-1], "battery_h2": self.hydrogen_storage})
         self._save(self.dict_param)
@@ -294,42 +281,7 @@ class MyEnv(Environment, gym.Env):
                 self.save_state[-1][key] = []
             self.save_state[-1][key].append(val)
 
-    def inputDimensions(self):
-        return self._input_dimensions
 
-    def nActions(self):
-        return 3
-
-    def observe(self):
-        return copy.deepcopy(self._last_ponctual_observation)
-
-    def summarizePerformance(self, test_data_set, *args, **kwargs):
-        print("summary perf")
-        print("self.hydrogen_storage: {}".format(self.hydrogen_storage))
-        observations = test_data_set.observations()
-        aaa = test_data_set.actions()
-        rewards = test_data_set.rewards()
-        actions=[]
-        for a, thea in enumerate (aaa):
-            if (thea==0):
-                actions.append(-self.hydrogen_max_power)
-            elif (thea==1):
-                actions.append(0)
-            elif (thea==2):
-                actions.append(self.hydrogen_max_power)
-
-        battery_level=np.array(observations[0])*self.battery_size
-        consumption=np.array(observations[1][:,0])*(self.max_consumption-self.min_consumption)+self.min_consumption
-        production=np.array(observations[1][:,1])*(self.max_production-self.min_production)+self.min_production
-
-        #        i=0
-        #        plot_op(actions[0+i:100+i],consumption[0+i:100+i],production[0+i:100+i],rewards[0+i:100+i],battery_level[0+i:100+i],"plot_winter_.png")
-        #
-        #        i=180*24
-        #        plot_op(actions[0+i:100+i],consumption[0+i:100+i],production[0+i:100+i],rewards[0+i:100+i],battery_level[0+i:100+i],"plot_summer_.png")
-        #
-        #        i=360*24
-        #        plot_op(actions[0+i:100+i],consumption[0+i:100+i],production[0+i:100+i],rewards[0+i:100+i],battery_level[0+i:100+i],"plot_winter2_.png")
     def add_reward(self, key, fn, coeff):
         self.dict_coeff[key] = coeff
         self.dict_reward[key] = fn
@@ -350,41 +302,13 @@ class MyEnv(Environment, gym.Env):
 
     def _init_gym(self):
         self.action_space = Discrete(3)
-        if (self._dist_equinox == 1 and self._pred == 1):
-            """self.observation_space = Tuple([
-                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64),
-                Box(low=np.zeros((self._length_history, 2)), high=np.ones((self._length_history, 2)),
-                    dtype=np.float64),
-                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64),
-                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64),
-                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64)
-            ])"""
+        if (self._dist_equinox and self._pred):
             self.observation_space = Box(low=np.zeros((1 + self._length_history * 2 + 3)),
                                          high=np.ones((1 + self._length_history * 2 + 3)))
-        elif (self._dist_equinox == 1 and self._pred == 0):
-            """self.observation_space = Tuple([
-                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64),
-                Box(low=np.zeros((self._length_history, 2)), high=np.ones((self._length_history, 2)),
-                    dtype=np.float64),
-                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64)
-            ])"""
+        elif (self._dist_equinox and not self._pred):
             self.observation_space = Box(low=np.zeros((1 + self._length_history * 2 + 1)),
                                          high=np.ones((1 + self._length_history * 2 + 1)))
 
-        elif (self._dist_equinox == 0 and self._pred == 0):
-            """self.observation_space = Tuple([
-                Box(low=np.array([0.]), high=np.array([1.]), dtype=np.float64),
-                Box(low=np.zeros((self._length_history, 2)), high=np.ones((self._length_history, 2)),
-                    dtype=np.float64)
-            ])"""
+        elif (not self._dist_equinox and not self._pred):
             self.observation_space = Box(low=np.zeros((1 + self._length_history * 2)),
                                      high=np.ones((1 + self._length_history * 2)))
-
-def main():
-    rng = np.random.RandomState(123456)
-    myenv=MyEnv(rng)
-
-    print (myenv.observe())
-    
-if __name__ == "__main__":
-    main()
