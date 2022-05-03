@@ -67,7 +67,7 @@ class EnvParam:
     MAX_SELL_ENERGY = 0
     PREDICTION = False
     EQUINOX = True
-    LENGTH_HISTORY = 1
+    LENGTH_HISTORY = 12
 
 def main():
     patience = 5
@@ -133,31 +133,32 @@ def main():
     env_valid.add_reward("Buy_energy", lambda x: -x["buy_energy"] * price_elec_buy, 1.)
 
     print("tensorflow work with:", tf.test.gpu_device_name())
+    pow_lr = 5
+    decay = 8
     logging.basicConfig(level=logging.INFO)
-    for train_freq in range(2, 100, 20):
-        for discount in np.arange(0.99, 0.1, -0.05):
-            for pow_buff_size in range(8, 4, -1):
-                for pow_replaybuff_size in range(1, 9):
-                    for decay in range(10, 3, -1):
-                        for freeze in range(1, 3):
-                            for pow_lr in range(3, 5):
-                                now = datetime.now()
-                                # dd_mm_YY-H-M-S
-                                dt_string = now.strftime("%d_%m_%Y-%H-%M-%S")
-                                filename = "best" + dt_string
-                                test(dirname, filename,
-                                     patience,
-                                     train_freq,
-                                     learning_rate= 10**(-pow_lr),
-                                     buffer_size= 10**(pow_replaybuff_size),
-                                     batch_size = 2**(pow_buff_size),
-                                     discount= discount,
-                                     eps_decay=10**(-decay),
-                                     freeze = freeze,
-                                     dict_env={},
-                                     env=env,
-                                     env_valid=env_valid,
-                                     verbose=False)
+    for discount in np.arange(0.99, 0.1, -0.05):
+        for pow_buff_size in range(8, 4, -1):
+            for pow_replaybuff_size in range(6, 1, -1):
+                for decay in [8, 5, 4, 3]:
+                    for train_freq in range(2, 100, 20):
+                        for pow_freeze in range(4, 0, -1):
+                            now = datetime.now()
+                            # dd_mm_YY-H-M-S
+                            dt_string = now.strftime("%d_%m_%Y-%H-%M-%S")
+                            filename = "best" + dt_string
+                            test(dirname, filename,
+                                 patience,
+                                 train_freq,
+                                 learning_rate= 10**(-pow_lr),
+                                 buffer_size= 10**(pow_replaybuff_size),
+                                 batch_size = 2**(pow_buff_size),
+                                 discount= discount,
+                                 eps_decay=10**(-decay),
+                                 freeze = 10**(pow_freeze),
+                                 dict_env={},
+                                 env=env,
+                                 env_valid=env_valid,
+                                 verbose=False)
 
 
 def test(dirname, filename,
@@ -187,7 +188,9 @@ def test(dirname, filename,
           "exploration_initial_eps=", Defaults.EPSILON_START,
           "exploration_final_eps=", Defaults.EPSILON_MIN,
           "exploration_fraction=", eps_decay,
-          "target_update_interval=", freeze,sep='\n')
+          "target_update_interval=", freeze,
+          "size_histo=", EnvParam.LENGTH_HISTORY,
+          "train_freq=", train_freq, sep='\n')
     if not os.path.exists(dirname + "/" + filename):
         os.makedirs(dirname + "/" + filename)
 
@@ -200,7 +203,8 @@ def test(dirname, filename,
           "\nexploration_initial_eps=" +  str(Defaults.EPSILON_START) +
           "\nexploration_final_eps=" +  str(Defaults.EPSILON_MIN) +
           "\nexploration_fraction=" +  str(eps_decay) +
-          "\ntarget_update_interval=" +  str(freeze))
+          "\ntarget_update_interval=" +  str(freeze) +
+          "\ntrain_freq=" + train_freq)
     f.close()
 
     print(len(env.observation_space.sample()))
