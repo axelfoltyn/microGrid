@@ -158,6 +158,7 @@ class MyEnv(gym.Env):
         self.dict_param["waste_energy"] = 0.
         self.dict_param["buy_energy"] = 0.
         self.dict_param["soc"] = 0.
+        self.dict_param["sell_energy"] = 0.
 
     def reset(self):
         """
@@ -235,7 +236,7 @@ class MyEnv(gym.Env):
                                                   - Energy_needed_from_battery * self.battery_eta) - self.battery_size)
             self._last_ponctual_observation[0] = min(1.,
                     self._last_ponctual_observation[0]-Energy_needed_from_battery/self.battery_size*self.battery_eta)
-        if self._max_ener_buy is not None:
+        if self._max_ener_sell is not None:
             self.dict_param["sell_energy"] = min(self._max_ener_sell, self.dict_param["waste_energy"])
         else:
             self.dict_param["sell_energy"] = self.dict_param["waste_energy"]
