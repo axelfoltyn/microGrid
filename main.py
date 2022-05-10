@@ -71,7 +71,7 @@ class EnvParam:
 
 def main():
     patience = 5
-    dirname = "result_4"
+    dirname = "resulttest"
     rng = np.random.RandomState()
 
     # --- Instantiate environment ---
@@ -131,6 +131,11 @@ def main():
     # --- validation reward ---
     env_valid.add_reward("Flow_H2", lambda x: x["flow_H2"] * price_h2, 1.)
     env_valid.add_reward("Buy_energy", lambda x: -x["buy_energy"] * price_elec_buy, 1.)
+    """# --- train reward ---
+    env.add_reward("Waste", lambda x: -x["waste_energy"] * cost_wast, 1.)
+
+    # --- validation reward ---
+    env_valid.add_reward("Waste", lambda x: -x["waste_energy"] * cost_wast, 1.)"""
 
     print("tensorflow work with:", tf.test.gpu_device_name())
 
@@ -139,30 +144,30 @@ def main():
     decay = 4 * 10**(-6)
     pow_replaybuff_size = 5
     tau = 1
+    pow_buff_size = 10
+    discount = 0.5
     logging.basicConfig(level=logging.INFO)
-    for pow_buff_size in [8, 9]:
-        for train_freq in [2, 4, 6, 8, 16, 32, 64]:
-            for freeze in [50, 20, 15, 10, 7, 5, 3, 1]:#[1, 3, 5, 7, 10, 15, 20]:
-                for discount in np.arange(0.5, 0.2, -0.2):
-                    for tau in np.arange(1.0, 0.1, -0.1):
-                        now = datetime.now()
-                        # dd_mm_YY-H-M-S
-                        dt_string = now.strftime("%d_%m_%Y-%H-%M-%S")
-                        filename = "best" + dt_string
-                        test(dirname, filename,
-                             patience,
-                             train_freq,
-                             learning_rate= 10**(-pow_lr),
-                             buffer_size= 10**(pow_replaybuff_size),
-                             batch_size = 2**(pow_buff_size),
-                             discount= discount,
-                             eps_decay= decay,
-                             freeze = freeze,
-                             dict_env=dict_env,
-                             env=env,
-                             env_valid=env_valid,
-                             tau=tau,
-                             verbose=False)
+    for train_freq in [2, 4]:
+        for freeze in [100, 50]:
+            for tau in np.arange(1.0, 0.7, -0.1):
+                now = datetime.now()
+                # dd_mm_YY-H-M-S
+                dt_string = now.strftime("%d_%m_%Y-%H-%M-%S")
+                filename = "best" + dt_string
+                test(dirname, filename,
+                     patience,
+                     train_freq,
+                     learning_rate= 10**(-pow_lr),
+                     buffer_size= 10**(pow_replaybuff_size),
+                     batch_size = 2**(pow_buff_size),
+                     discount= discount,
+                     eps_decay= decay,
+                     freeze = freeze,
+                     dict_env=dict_env,
+                     env=env,
+                     env_valid=env_valid,
+                     tau=tau,
+                     verbose=False)
 
 
 def test(dirname, filename,
@@ -305,8 +310,9 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
                       kind="hist", marginal_ticks=True)
     # JointGrid has a convenience function
     h.set_axis_labels('charge battery (%)', 'demand (W)', fontsize=16)
-    plt.savefig(dirname + "/" + filename + "/" + filename + "_plots_action0.png")
-    plt.title("distribution selon l'action de décharge")
+    h.fig.suptitle("distribution selon l'action de décharge")
+
+    plt.savefig(dirname + "/" + filename + "/" + filename + "_plots_action0.png", bbox_inches = "tight")
     if verbose:
         plt.show()
     plt.clf()
@@ -316,8 +322,8 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
                       kind="hist", marginal_ticks=True)
     # JointGrid has a convenience function
     h.set_axis_labels('charge battery (%)', 'demand (W)', fontsize=16)
-    plt.savefig(dirname + "/" + filename + "/" + filename + "_plots_action1.png")
-    plt.title("distribution selon l'action ne rien faire")
+    h.fig.suptitle("distribution selon l'action ne rien faire")
+    plt.savefig(dirname + "/" + filename + "/" + filename + "_plots_action1.png", bbox_inches = "tight")
     if verbose:
         plt.show()
     plt.clf()
@@ -327,8 +333,8 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
                       kind="hist", marginal_ticks=True)
     # JointGrid has a convenience function
     h.set_axis_labels('charge battery (%)', 'demand (W)', fontsize=16)
-    plt.savefig(dirname + "/" + filename + "/" + filename + "_plots_action2.png")
-    plt.title("distribution selon l'action de charge")
+    h.fig.suptitle("distribution selon l'action de charge")
+    plt.savefig(dirname + "/" + filename + "/" + filename + "_plots_action2.png", bbox_inches = "tight")
     if verbose:
         plt.show()
     plt.clf()
@@ -341,8 +347,8 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
     corr = corr.corr()
     plt.subplots(figsize=(12, 9))
     sns.heatmap(corr, annot=True)
-    plt.savefig(dirname + "/" + filename + "/" + filename + "_heatmap.png")
     plt.title("correlation entre les différentes valeurs de récompense")
+    plt.savefig(dirname + "/" + filename + "/" + filename + "_heatmap.png", bbox_inches = "tight")
     if verbose:
         plt.show()
     plt.clf()
@@ -352,8 +358,8 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
     corr = corr.corr()
     plt.subplots(figsize=(12, 9))
     sns.heatmap(corr, annot=True)
-    plt.savefig(dirname + "/" + filename + "/" + filename + "_heatmap2.png")
     plt.title("correlation entre tous les données")
+    plt.savefig(dirname + "/" + filename + "/" + filename + "_heatmap2.png", bbox_inches = "tight")
     if verbose:
         plt.show()
     plt.clf()
@@ -363,52 +369,52 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
 
     for k in bestScores.keys():
         try:
-            plt.plot(range(len(bestScores[k])), scaler.fit_transform(np.array(bestScores[k]).reshape(-1,1)),
+            plt.plot(range(1,len(bestScores[k])+1), scaler.fit_transform(np.array(bestScores[k]).reshape(-1,1)),
                      label="score " + str(k))
         except Exception as e:
             print("error",k)
             print(e)
-            plt.plot(range(len(bestScores[k])), bestScores[k], label="score " + str(k))
+            plt.plot(range(1,len(bestScores[k])+1), bestScores[k], label="score " + str(k))
 
     plt.legend()
     plt.xlabel("pas pour chaque nouveaux meilleurs scores (sans unité)")
     plt.ylabel("score normalisé (sans unité)")
-    plt.savefig(dirname + "/" + filename + "/" + filename + "_scoresbest.png")
     plt.title("correlation entre tous les données")
+    plt.savefig(dirname + "/" + filename + "/" + filename + "_scoresbest.png", bbox_inches = "tight")
     if verbose:
         plt.show()
     plt.clf()
 
     for k in allScores.keys():
         try:
-            plt.plot(range(len(allScores[k])), allScores[k],
+            plt.plot(range(1, len(allScores[k])+1), allScores[k],
                      label="score " + str(k))
         except Exception as e:
             print("error",k)
             print(e)
-            plt.plot(range(len(allScores[k])), allScores[k], label="score " + str(k))
+            plt.plot(range(1, len(allScores[k])+1), allScores[k], label="score " + str(k))
 
     plt.legend()
     plt.xlabel("nombre d'épisode (sans unité)")
     plt.ylabel("score (sans unité)")
-    plt.savefig(dirname + "/" + filename + "/" + filename + "_scores.png")
+    plt.savefig(dirname + "/" + filename + "/" + filename + "_scores.png", bbox_inches = "tight")
     if verbose:
         plt.show()
     plt.clf()
 
     for k in allScores.keys():
         try:
-            plt.plot(range(len(allScores[k])), scaler.fit_transform(np.array(allScores[k]).reshape(-1,1)),
+            plt.plot(range(1, len(allScores[k])+1), scaler.fit_transform(np.array(allScores[k]).reshape(-1,1)),
                      label="score " + str(k))
         except Exception as e:
             print("error",k)
             print(e)
-            plt.plot(range(len(allScores[k])), scaler.fit_transform(np.array(allScores[k]).reshape(-1,1)), label="score " + str(k))
+            plt.plot(range(1, len(allScores[k])+1), scaler.fit_transform(np.array(allScores[k]).reshape(-1,1)), label="score " + str(k))
 
     plt.legend()
     plt.xlabel("nombre d'épisode (sans unité)")
     plt.ylabel("score normalisé (sans unité)")
-    plt.savefig(dirname + "/" + filename + "/" + filename + "_scores.png")
+    plt.savefig(dirname + "/" + filename + "/" + filename + "_scores_normed.png", bbox_inches = "tight")
     if verbose:
         plt.show()
 
@@ -425,11 +431,23 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
 
     plt.axis('equal')
 
-    plt.savefig(dirname + "/" + filename + "/" + filename + 'PieChart.png')
+    plt.savefig(dirname + "/" + filename + "/" + filename + 'PieChart.png', bbox_inches = "tight")
     if verbose:
         plt.show()
     plt.clf()
     plt.close("all")
+
+    with open(dirname + "/" + filename + "/" + filename + "data.csv", 'w') as f:
+        keys = list(allScores.keys())
+        for j in range(len(keys) - 1):
+            f.write(str(keys[j]) + ";")
+        f.write(str(keys[-1]) + "\n")
+        print(allScores)
+        print(keys[0],":slen", len(allScores[keys[0]]))
+        for i in range(len(allScores[keys[0]])): # same size in allScores
+            for j in range(len(keys) - 1):
+                f.write(str(allScores[keys[j]][i]) + ";")
+            f.write(str(allScores[keys[-1]][i]) + "\n")
 
 
 
