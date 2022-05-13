@@ -14,7 +14,7 @@ import pandas as pd
 from stable_baselines3 import DQN
 
 from sklearn import preprocessing
-from microGrid.reward.reward import ClientReward
+from microGrid.reward.reward import ClientReward, BlackoutReward
 
 from datetime import datetime
 import shutil
@@ -69,105 +69,173 @@ class EnvParam:
     EQUINOX = True
     LENGTH_HISTORY = 12
 
-def main():
-    patience = 5
-    dirname = "resulttest"
+def init_env():
     rng = np.random.RandomState()
-
-    # --- Instantiate environment ---
-    dict_env = dict()
-
-    env = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
-                              length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
-                              max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+    env_res = dict()
+    env_valid_res = dict()
     absolute_dir = os.path.abspath('')
     prod = np.load(absolute_dir + "/microGrid/env/data/BelgiumPV_prod_test.npy")[0:1 * 365 * 24]
     cons = np.load(absolute_dir + "/microGrid/env/data/example_nondeterminist_cons_test.npy")[0:1 * 365 * 24]
-    env_valid = MG_two_storages_env(rng, consumption=cons, production=prod,
-                                    pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
-                                    length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
-                                    max_ener_sell=EnvParam.MAX_SELL_ENERGY)
-
-    # optimisation énergie
-    env_ener = MG_two_storages_env(rng, consumption=cons, production=prod,
-                                   pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
-                                   length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
-                                   max_ener_sell=EnvParam.MAX_SELL_ENERGY)
-    dict_env["energy"] = env_ener
-    # ressenti client
-    env_user = MG_two_storages_env(rng, consumption=cons, production=prod,
-                                   pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
-                                   length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
-                                   max_ener_sell=EnvParam.MAX_SELL_ENERGY)
-    dict_env["user"] = env_user
-    # profit réseau
-    env_profit = MG_two_storages_env(rng, consumption=cons, production=prod,
-                                     pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
-                                     length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
-                                     max_ener_sell=EnvParam.MAX_SELL_ENERGY)
-    dict_env["profit"] = env_profit
-    # préservation des stockages
-    env_stockage = MG_two_storages_env(rng, consumption=cons, production=prod,
-                                       pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
-                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
-                                       max_ener_sell=EnvParam.MAX_SELL_ENERGY)
-    dict_env["stockage"] = env_stockage
 
     # --- Instantiate reward parameters ---
     price_h2 = 0.1  # 0.1euro/kWh of hydrogen
     price_elec_buy = 2.0  # 2euro/kWh
     cost_wast = 0.1  # arbitrary value
+    
+    # Fixme : il faut reset pour l'automatisation
     reward_client = ClientReward()
+    reward_client_valid = ClientReward()
+    reward_blackout = BlackoutReward()
+    reward_valid_blackout = BlackoutReward()
 
-    # --- comparative reward ---
-    dict_env["energy"].add_reward("Waste", lambda x: -x["waste_energy"] * cost_wast, 1.)
-    dict_env["profit"].add_reward("Profit", lambda x: (x["sell_energy"] - x["buy_energy"]) * price_elec_buy, 1.)
-    dict_env["user"].add_reward("Dissatisfaction", lambda x: reward_client.fn(x), 1.)
+    key = "default"
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                              length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                              max_ener_sell=EnvParam.MAX_SELL_ENERGY)
 
-    # --- train reward ---
-    env.add_reward("Flow_H2", lambda x: x["flow_H2"] * price_h2, 1.)
-    env.add_reward("Buy_energy", lambda x: -x["buy_energy"] * price_elec_buy, 1.)
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                    pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                    length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                    max_ener_sell=EnvParam.MAX_SELL_ENERGY)
 
-    # --- validation reward ---
-    env_valid.add_reward("Flow_H2", lambda x: x["flow_H2"] * price_h2, 1.)
-    env_valid.add_reward("Buy_energy", lambda x: -x["buy_energy"] * price_elec_buy, 1.)
-    """# --- train reward ---
-    env.add_reward("Waste", lambda x: -x["waste_energy"] * cost_wast, 1.)
+    env_res[key].add_reward("Flow_H2", lambda x: x["flow_H2"] * price_h2, 1.)
+    env_res[key].add_reward("Buy_energy", lambda x: -x["buy_energy"] * price_elec_buy, 1.)
+    env_valid_res[key].add_reward("Flow_H2", lambda x: x["flow_H2"] * price_h2, 1.)
+    env_valid_res[key].add_reward("Buy_energy", lambda x: -x["buy_energy"] * price_elec_buy, 1.)
 
-    # --- validation reward ---
-    env_valid.add_reward("Waste", lambda x: -x["waste_energy"] * cost_wast, 1.)"""
+    # optimisation énergie
+    key = "energy"
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                              length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                              max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                    pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                    length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                    max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+    env_res[key].add_reward("Waste", lambda x: -x["waste_energy"] * cost_wast, 1.)
+    env_valid_res[key].add_reward("Waste", lambda x: -x["waste_energy"] * cost_wast, 1.)
+
+    # ressenti client
+    key = "user"
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                       max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                             pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                             length_history=EnvParam.LENGTH_HISTORY,
+                                             max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                             max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+    env_res[key].add_reward("Dissatisfaction", lambda x: reward_client.fn(x), 1.)
+    env_valid_res[key].add_reward("Dissatisfaction", lambda x: reward_client_valid.fn(x), 1.)
+
+
+    # profit réseau
+    key = "profit"
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                       max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                             pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                             length_history=EnvParam.LENGTH_HISTORY,
+                                             max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                             max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+    env_res[key].add_reward("Profit", lambda x: (x["sell_energy"] - x["buy_energy"]) * price_elec_buy, 1.)
+
+    env_valid_res[key].add_reward("Profit", lambda x: (x["sell_energy"] - x["buy_energy"]) * price_elec_buy, 1.)
+
+    # profit réseau
+    key = "profit2"
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                       max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                             pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                             length_history=EnvParam.LENGTH_HISTORY,
+                                             max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                             max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+    env_res[key].add_reward("Profit", lambda x: (-x["buy_energy"]) * price_elec_buy, 1.)
+    env_valid_res[key].add_reward("Profit", lambda x: (-x["buy_energy"]) * price_elec_buy, 1.)
+
+    # préservation des stockages
+    key = "stockage"
+
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                       max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                             pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                             length_history=EnvParam.LENGTH_HISTORY,
+                                             max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                             max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+
+    env_res[key].add_reward("Dissatisfaction", lambda x: reward_client.fn(x), 1.)
+    env_valid_res[key].add_reward("Dissatisfaction", lambda x: reward_client.fn(x), 1.)
+
+    key = "blackout"
+
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                       max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                             pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                             length_history=EnvParam.LENGTH_HISTORY,
+                                             max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                             max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+
+    env_res[key].add_reward("Dissatisfaction", lambda x: reward_blackout.fn(x), 1.)
+    env_valid_res[key].add_reward("Dissatisfaction", lambda x: reward_valid_blackout.fn(x), 1.)
+
+    return env_res, env_valid_res
+
+
+def main():
+    patience = 5
+    dirname = "result"
+
+    # --- Instantiate environments ---
+    env_res, env_valid_res = init_env()
 
     print("tensorflow work with:", tf.test.gpu_device_name())
-
+    logging.basicConfig(level=logging.INFO)
 
     pow_lr = 5
     decay = 4 * 10**(-6)
     pow_replaybuff_size = 5
-    tau = 1
-    pow_buff_size = 10
-    discount = 0.5
-    logging.basicConfig(level=logging.INFO)
-    for train_freq in [2, 4]:
-        for freeze in [100, 50]:
-            for tau in np.arange(1.0, 0.7, -0.1):
-                now = datetime.now()
-                # dd_mm_YY-H-M-S
-                dt_string = now.strftime("%d_%m_%Y-%H-%M-%S")
-                filename = "best" + dt_string
-                test(dirname, filename,
-                     patience,
-                     train_freq,
-                     learning_rate= 10**(-pow_lr),
-                     buffer_size= 10**(pow_replaybuff_size),
-                     batch_size = 2**(pow_buff_size),
-                     discount= discount,
-                     eps_decay= decay,
-                     freeze = freeze,
-                     dict_env=dict_env,
-                     env=env,
-                     env_valid=env_valid,
-                     tau=tau,
-                     verbose=False)
+    tau = 0.95
+    pow_buff_size = 8
+    discount = 0.8
+    train_freq = 2
+    freeze = 50
+
+
+    for key in env_res.keys():
+        env = env_res[key]
+        env_valid = env_valid_res[key]
+        dict_env = {k:val for (k,val) in env_res.items() if k != key}
+        now = datetime.now()
+        # dd_mm_YY-H-M-S
+        dt_string = now.strftime("%d_%m_%Y-%H-%M-%S")
+        filename = "best" + dt_string + "_env_" + key
+        test(dirname, filename,
+             patience,
+             train_freq,
+             learning_rate= 10**(-pow_lr),
+             buffer_size= 10**(pow_replaybuff_size),
+             batch_size = 2**(pow_buff_size),
+             discount= discount,
+             eps_decay= decay,
+             freeze = freeze,
+             dict_env=dict_env,
+             env=env,
+             env_valid=env_valid,
+             tau=tau,
+             verbose=False)
 
 
 def test(dirname, filename,
@@ -379,7 +447,7 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
     plt.legend()
     plt.xlabel("pas pour chaque nouveaux meilleurs scores (sans unité)")
     plt.ylabel("score normalisé (sans unité)")
-    plt.title("correlation entre tous les données")
+    plt.title("courbe d'évolution normalisé des meilleur scores")
     plt.savefig(dirname + "/" + filename + "/" + filename + "_scoresbest.png", bbox_inches = "tight")
     if verbose:
         plt.show()
@@ -397,6 +465,7 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
     plt.legend()
     plt.xlabel("nombre d'épisode (sans unité)")
     plt.ylabel("score (sans unité)")
+    plt.title("courbe d'évolution des scores pour chaque episode d'apprentissage")
     plt.savefig(dirname + "/" + filename + "/" + filename + "_scores.png", bbox_inches = "tight")
     if verbose:
         plt.show()
@@ -414,6 +483,7 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
     plt.legend()
     plt.xlabel("nombre d'épisode (sans unité)")
     plt.ylabel("score normalisé (sans unité)")
+    plt.title("courbe d'évolution normalsé des scores pour chaque episode d'apprentissage")
     plt.savefig(dirname + "/" + filename + "/" + filename + "_scores_normed.png", bbox_inches = "tight")
     if verbose:
         plt.show()
@@ -430,20 +500,21 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
             autopct='%1.1f%%', shadow=True, startangle=90)
 
     plt.axis('equal')
+    plt.title("camembert des proportion des actions choisies")
 
-    plt.savefig(dirname + "/" + filename + "/" + filename + 'PieChart.png', bbox_inches = "tight")
+    plt.savefig(dirname + "/" + filename + "/" + filename + '_PieChart.png', bbox_inches = "tight")
     if verbose:
         plt.show()
     plt.clf()
     plt.close("all")
 
-    with open(dirname + "/" + filename + "/" + filename + "data.csv", 'w') as f:
+    with open(dirname + "/" + filename + "/" + filename + "_data.csv", 'w') as f:
         keys = list(allScores.keys())
         for j in range(len(keys) - 1):
             f.write(str(keys[j]) + ";")
         f.write(str(keys[-1]) + "\n")
         print(allScores)
-        print(keys[0],":slen", len(allScores[keys[0]]))
+        print(keys[0], ":len", len(allScores[keys[0]]))
         for i in range(len(allScores[keys[0]])): # same size in allScores
             for j in range(len(keys) - 1):
                 f.write(str(allScores[keys[j]][i]) + ";")

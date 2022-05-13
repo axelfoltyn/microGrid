@@ -55,10 +55,10 @@ class BestCallback(BaseCallback):
             self.bestScores["train"].append(mean_reward)
 
             self.bestValidationScoreSoFar = self.bestScores["validation"][-1]
-            print("new best", self.dirname + "score:" + str(self.bestScores["validation"][-1]))
+            print("new best", self.dirname + "_score:" + str(self.bestScores["validation"][-1]))
             print("train score:" + str(self.bestScores["train"][-1]))
-            self.model.save(self.parent_path + "/" + self.dirname + "/" + self.dirname + "-" + self.model.__class__.__name__ +
-                            "-score" + str(self.bestScores["validation"][-1]))
+            self.model.save(self.parent_path + "/" + self.dirname + "/" + self.dirname + "_" + self.model.__class__.__name__ +
+                            "_score" + str(self.bestScores["validation"][-1]))
             self.data = self.env_valid.get_data()[-2] #-1 empty because env is reset at the end
         if self.cycle >= self.patience:
             return False
