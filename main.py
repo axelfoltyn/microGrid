@@ -48,17 +48,17 @@ class Defaults:
     # DQN Agent parameters:
     # ----------------------
     UPDATE_RULE = 'rmsprop'
-    LEARNING_RATE = 2e-2
+    LEARNING_RATE = 1e-5
     LEARNING_RATE_DECAY = 0.99
-    DISCOUNT = 0.99
+    DISCOUNT = 0.8
     DISCOUNT_INC = 0.99
     DISCOUNT_MAX = 0.98
     EPSILON_START = 1.0
     EPSILON_MIN = .1
-    EPSILON_DECAY = 2.3e-7
-    REPLAY_MEMORY_SIZE = 1000000
-    BATCH_SIZE = 512#32
-    FREEZE_INTERVAL = 1000
+    EPSILON_DECAY = 4e-6
+    REPLAY_MEMORY_SIZE = 100000
+    BATCH_SIZE = 256
+    FREEZE_INTERVAL = 50
     DETERMINISTIC = False
     TARGET_UPDATE_INTERVAL = 2
 
@@ -104,7 +104,7 @@ def init_env():
     env_valid_res[key].add_reward("Buy_energy", lambda x: -x["buy_energy"] * price_elec_buy, 1.)
 
     # optimisation énergie
-    key = "energy"
+    key = "- perte_d’energie * cout_perte"
     env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
                               length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
                               max_ener_sell=EnvParam.MAX_SELL_ENERGY)
@@ -117,7 +117,7 @@ def init_env():
     env_valid_res[key].add_reward("Waste", lambda x: -x["waste_energy"] * cost_wast, 1.)
 
     # ressenti client
-    key = "user"
+    key = "f_insatisfait(temps_sans_energie)"
     env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
                                        length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
                                        max_ener_sell=EnvParam.MAX_SELL_ENERGY)
@@ -132,7 +132,7 @@ def init_env():
 
 
     # profit réseau
-    key = "profit"
+    key = "vente − achat"
     env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
                                        length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
                                        max_ener_sell=EnvParam.MAX_SELL_ENERGY)
@@ -147,7 +147,7 @@ def init_env():
     env_valid_res[key].add_reward("Profit", lambda x: (x["sell_energy"] - x["buy_energy"]) * price_elec_buy, 1.)
 
     # profit réseau
-    key = "profit2"
+    key = "- prix_achat * achat"
     env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
                                        length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
                                        max_ener_sell=EnvParam.MAX_SELL_ENERGY)
@@ -176,7 +176,7 @@ def init_env():
     env_res[key].add_reward("Dissatisfaction", lambda x: reward_client.fn(x), 1.)
     env_valid_res[key].add_reward("Dissatisfaction", lambda x: reward_client.fn(x), 1.)
 
-    key = "blackout"
+    key = "- cout_coupure * coupure"
 
     env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
                                        length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
@@ -190,6 +190,21 @@ def init_env():
 
     env_res[key].add_reward("Dissatisfaction", lambda x: reward_blackout.fn(x), 1.)
     env_valid_res[key].add_reward("Dissatisfaction", lambda x: reward_valid_blackout.fn(x), 1.)
+
+    key = "flux_batterie h2"
+
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                       max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                             pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                             length_history=EnvParam.LENGTH_HISTORY,
+                                             max_ener_buy=EnvParam.MAX_BUY_ENERGY,
+                                             max_ener_sell=EnvParam.MAX_SELL_ENERGY)
+
+    env_res[key].add_reward("Dissatisfaction", lambda x: x["flow_H2"], 1.)
+    env_valid_res[key].add_reward("Dissatisfaction", lambda x: x["flow_H2"], 1.)
 
     return env_res, env_valid_res
 
@@ -213,7 +228,7 @@ def main():
     train_freq = 2
     freeze = 50
 
-
+    start = time.time()
     for key in env_res.keys():
         env = env_res[key]
         env_valid = env_valid_res[key]
@@ -235,7 +250,9 @@ def main():
              env=env,
              env_valid=env_valid,
              tau=tau,
-             verbose=False)
+             verbose=False, param=str(key))
+    res = time.time() - start
+    print("tot time:", int(res / 3600), "h", int((res % 3600) / 60), "min", res % 60, "s")
 
 
 def test(dirname, filename,
@@ -251,7 +268,7 @@ def test(dirname, filename,
          env,
          env_valid,
          tau=1.,
-         verbose = False):
+         verbose = False, param=""):
 
 
 
@@ -287,7 +304,8 @@ def test(dirname, filename,
           "\nsize_histo=" + str(EnvParam.LENGTH_HISTORY) +
           "\nPREDICTION=" + str(EnvParam.PREDICTION) +
           "\nEQUINOX=" + str(EnvParam.EQUINOX) +
-          "\ntau=" + str(tau)
+          "\ntau=" + str(tau) +
+          "\nparam=" + str(param)
     )
     f.close()
 

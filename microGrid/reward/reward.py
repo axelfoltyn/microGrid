@@ -32,3 +32,18 @@ class BlackoutReward(Reward):
 
     def reset(self):
         self.nb_blackout = 0
+
+class DODReward(Reward):
+    def __init__(self, rainflow):
+        self.rainflow = rainflow
+        self.reset()
+        self.f_dod = lambda x: -x
+
+    def fn(self, param):
+        pass
+
+    def set_fn(self, f):
+        self.f_dod = f
+
+    def reset(self):
+        self.rainflow.reset()

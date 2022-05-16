@@ -154,6 +154,7 @@ class MyEnv(gym.Env):
 
     def _init_dict(self):
         self.dict_param["flow_H2"] = 0.
+        self.dict_param["flow_lythium"] = 0.
         self.dict_param["lack_energy"] = 0.
         self.dict_param["waste_energy"] = 0.
         self.dict_param["buy_energy"] = 0.
@@ -214,28 +215,33 @@ class MyEnv(gym.Env):
         Energy_needed_from_battery=true_demand+true_energy_avail_from_hydrogen
         
         if (Energy_needed_from_battery>0):
-        # Lack of energy
+            # Lack of energy
             if (self._last_ponctual_observation[0]*self.battery_size>Energy_needed_from_battery):
-            # If enough energy in the battery, use it
+                # If enough energy in the battery, use it
                 self.dict_param["lack_energy"] = 0
-                self._last_ponctual_observation[0] = self._last_ponctual_observation[0] - \
-                                                     Energy_needed_from_battery/self.battery_size/self.battery_eta
+                self.dict_param["flow_lythium"] = - Energy_needed_from_battery/self.battery_eta
+                self._last_ponctual_observation[0] = self._last_ponctual_observation[0] + \
+                                                     self.dict_param["flow_lythium"]/self.battery_size
+
             else:
-            # Otherwise: use what is left and then penalty
+                # Otherwise: use what is left and then penalty
                 self.dict_param["lack_energy"] = (Energy_needed_from_battery -
                                                   self._last_ponctual_observation[0] * self.battery_size)
-                self._last_ponctual_observation[0] = 0
+                self.dict_param["flow_lythium"] = - self._last_ponctual_observation[0]
+                self._last_ponctual_observation[0] = 0 * self.battery_size
             if self._max_ener_buy is not None:
                 self.dict_param["buy_energy"] = min(self._max_ener_buy, self.dict_param["lack_energy"])
             else:
                 self.dict_param["buy_energy"] = self.dict_param["lack_energy"]
             self.dict_param["lack_energy"] -= self.dict_param["buy_energy"]
         elif (Energy_needed_from_battery<0):
-        # Surplus of energy --> load the battery
+            # Surplus of energy --> load the battery
             self.dict_param["waste_energy"] = max(0, (self._last_ponctual_observation[0] * self.battery_size
                                                   - Energy_needed_from_battery * self.battery_eta) - self.battery_size)
+            tmp_bat = self._last_ponctual_observation[0]
             self._last_ponctual_observation[0] = min(1.,
                     self._last_ponctual_observation[0]-Energy_needed_from_battery/self.battery_size*self.battery_eta)
+            self.dict_param["flow_lythium"] = (self._last_ponctual_observation[0] - tmp_bat) * self.battery_size
         if self._max_ener_sell is not None:
             self.dict_param["sell_energy"] = min(self._max_ener_sell, self.dict_param["waste_energy"])
         else:
