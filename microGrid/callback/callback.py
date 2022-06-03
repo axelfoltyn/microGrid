@@ -1,7 +1,17 @@
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from collections import defaultdict
-    
+
+class ResetCallback(BaseCallback):
+    def __init__(self, lreset):
+        super().__init__()
+        self.lreset = lreset
+
+    def _on_step(self) -> bool:
+        if all(self.locals["dones"]):
+            for elt in self.lreset:
+                elt.reset()
+        return True
 
 class BestCallback(BaseCallback):
     def __init__(self, valid_env, dict_env, patience, dirname, parent_path):
@@ -40,27 +50,27 @@ class BestCallback(BaseCallback):
         self.allScores["train"].append(mean_reward)
         mean_reward, std_reward = evaluate_policy(self.model, self.env_valid, n_eval_episodes=1)
         self.allScores["validation"].append(mean_reward)
+        print("score", self.dirname + "_score:" + str(self.allScores["validation"][-1]))
+        print("train score:" + str(self.allScores["train"][-1]))
+        print(self.locals)
 
         # part best
         if self.bestValidationScoreSoFar is None or mean_reward > self.bestValidationScoreSoFar:
+            self.bestValidationScoreSoFar = mean_reward
             self.cycle = 0
 
             for k in self.dict_env.keys():
-                mean_reward, std_reward = evaluate_policy(self.model, self.dict_env[k], n_eval_episodes=1)
-                self.bestScores[k].append(mean_reward)
+                self.bestScores[k].append(self.allScores[k][-1])
 
-            mean_reward, std_reward = evaluate_policy(self.model, self.env_valid, n_eval_episodes=1)
-            self.bestScores["validation"].append(mean_reward)
-            mean_reward, std_reward = evaluate_policy(self.model, self.training_env, n_eval_episodes=1)
-            self.bestScores["train"].append(mean_reward)
+            self.bestScores["validation"].append(self.allScores["validation"][-1])
+            self.bestScores["train"].append(self.allScores["train"][-1])
 
-            self.bestValidationScoreSoFar = self.bestScores["validation"][-1]
             print("new best", self.dirname + "_score:" + str(self.bestScores["validation"][-1]))
             print("train score:" + str(self.bestScores["train"][-1]))
             self.model.save(self.parent_path + "/" + self.dirname + "/" + self.dirname + "_" + self.model.__class__.__name__ +
                             "_score" + str(self.bestScores["validation"][-1]))
             self.data = self.env_valid.get_data()[-2] #-1 empty because env is reset at the end
-        if self.cycle >= self.patience:
+        if self.patience is not None and self.cycle >= self.patience:
             return False
         return True
 

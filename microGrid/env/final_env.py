@@ -22,7 +22,7 @@ import os
 class MyEnv(gym.Env):
     def __init__(self, rng, reduce_qty_data=None, length_history=None, start_history=None,
                  consumption=None, production=None, scale_cons = 2.1, scale_prod = 12000./1000.,
-                 pred = False, dist_equinox = False, max_ener_buy=None, max_ener_sell=None):
+                 pred = False, dist_equinox = False, max_ener_buy=None, max_ener_sell=None, verbose=False):
         """ Initialize environment
 
         Arguments:
@@ -51,6 +51,9 @@ class MyEnv(gym.Env):
         self.dict_param = dict()
         self._init_dict()
 
+        self.scale_cons = scale_cons
+        self.scale_prod = scale_prod
+
         reduce_qty_data=int(reduce_qty_data) if reduce_qty_data is not None else int(1)
         length_history=int(length_history) if length_history is not None else int(12)
         start_history=int(start_history) if start_history is not None else int(0)
@@ -62,7 +65,7 @@ class MyEnv(gym.Env):
         self._reduce_qty_data=reduce_qty_data   # Factor by which to artificially reduce the data available (for training+validation)
                                                 # Choices are 1,2,4,8,16
                                                 
-        self._length_history=length_history     # Length for the truncature of the history to build the pseudo-state
+        self._length_history=max(1,length_history)     # Length for the truncature of the history to build the pseudo-state
 
         self._start_history=start_history       # Choice between data that is replicated (choices are in [0,...,self._reduce_qty_data[ )
 
@@ -70,11 +73,12 @@ class MyEnv(gym.Env):
         self._max_ener_sell = max_ener_sell
         
         if (self._dist_equinox and self._pred):
-            self._last_ponctual_observation = [0.]+ [0. for _ in range(self._length_history * 2 + 3)]
+            self._last_ponctual_observation = [0.] \
+                                              + [0. for _ in range(self._length_history * 2 + 3)]
         elif (self._dist_equinox and not self._pred):
-            self._last_ponctual_observation = [0.]+ [0. for _ in range(self._length_history * 2 + 1)]
+            self._last_ponctual_observation = [0.] + [0. for _ in range(self._length_history * 2 + 1)]
         elif (not self._dist_equinox and not self._pred):
-            self._last_ponctual_observation = [0.]+ [0. for _ in range(self._length_history * 2)]
+            self._last_ponctual_observation = [0.] + [0. for _ in range(self._length_history * 2)]
         self._input_dimensions = [(len(self._last_ponctual_observation),)]
         self._init_gym()
 
@@ -94,12 +98,11 @@ class MyEnv(gym.Env):
 
         self.min_consumption=min(self.consumption)
         self.max_consumption=max(self.consumption)
-        print("Sample of the consumption profile (kW): {}".format(self.consumption[0:24]))
-        print("Min of the consumption profile (kW): {}".format(self.min_consumption))
-        print("Max of the consumption profile (kW): {}".format(self.max_consumption))
-        print("Average consumption per day train (kWh): {}".format(np.sum(self.consumption)/self.consumption.shape[0]*24))
-        #print("Average consumption per day valid (kWh): {}".format(np.sum(self.consumption_valid)/self.consumption_valid.shape[0]*24))
-        #print("Average consumption per day test (kWh): {}".format(np.sum(self.consumption_test)/self.consumption_test.shape[0]*24))
+        if verbose:
+            print("Sample of the consumption profile (kW): {}".format(self.consumption[0:24]))
+            print("Min of the consumption profile (kW): {}".format(self.min_consumption))
+            print("Max of the consumption profile (kW): {}".format(self.max_consumption))
+            print("Average consumption per day train (kWh): {}".format(np.sum(self.consumption)/self.consumption.shape[0]*24))
 
         if production is None:
             production = np.load(absolute_dir + "/data/BelgiumPV_prod_train.npy")[0:1*365*24]
@@ -110,8 +113,9 @@ class MyEnv(gym.Env):
         # Scale production profile : 12KWp (60m^2) et en kWh
         self.production=self.production_norm*scale_prod
 
-        print ("self.production_train brefore")
-        print (self.production)
+        if verbose:
+            print ("self.production_train brefore")
+            print (self.production)
         
         ###
         ### Artificially reducing the variety of the training and validation time series
@@ -136,15 +140,17 @@ class MyEnv(gym.Env):
                     self.production_norm[int((season+(self._start_history+0.)/self._reduce_qty_data)*nd_one_seas):
                                          int((season+(self._start_history+1.)/self._reduce_qty_data)*nd_one_seas)],
                     self._reduce_qty_data)
-        print ("self.production_train after")
-        print (self.production)
+        if verbose:
+            print ("self.production_train after")
+            print (self.production)
 
-        self.min_production=min(self.production)
-        self.max_production=max(self.production)
-        print("Sample of the production profile (kW): {}".format(self.production[0:24]))
-        print("Min of the production profile (kW): {}".format(self.min_production))
-        print("Max of the production profile (kW): {}".format(self.max_production))
-        print("Average production per day train (kWh): {}".format(np.sum(self.production)/self.production.shape[0]*24))
+        if verbose:
+            self.min_production=min(self.production)
+            self.max_production=max(self.production)
+            print("Sample of the production profile (kW): {}".format(self.production[0:24]))
+            print("Min of the production profile (kW): {}".format(self.min_production))
+            print("Max of the production profile (kW): {}".format(self.max_production))
+            print("Average production per day train (kWh): {}".format(np.sum(self.production)/self.production.shape[0]*24))
 
         self.battery_size=15.
         self.battery_eta=0.9
@@ -153,13 +159,13 @@ class MyEnv(gym.Env):
         self.hydrogen_eta=.65
 
     def _init_dict(self):
-        self.dict_param["flow_H2"] = 0.
-        self.dict_param["flow_lythium"] = 0.
-        self.dict_param["lack_energy"] = 0.
-        self.dict_param["waste_energy"] = 0.
-        self.dict_param["buy_energy"] = 0.
-        self.dict_param["soc"] = 0.
-        self.dict_param["sell_energy"] = 0.
+        self.dict_param["flow_H2"] = 0.      # Value between 0 and 1
+        self.dict_param["flow_lithium"] = 0. # Value between 0 and 1
+        self.dict_param["lack_energy"] = 0.  # Value between 0 and 1
+        self.dict_param["waste_energy"] = 0. # Value between 0 and 1
+        self.dict_param["soc"] = 0.          # Value between 0 and 1
+        self.dict_param["buy_energy"] = 0.   # Value between 0 and 1
+        self.dict_param["sell_energy"] = 0.  # Value between 0 and 1
 
     def reset(self):
         """
@@ -208,7 +214,7 @@ class MyEnv(gym.Env):
             true_energy_avail_from_hydrogen=self.hydrogen_max_power/self.hydrogen_eta
             diff_hydrogen=self.hydrogen_max_power
 
-        self.dict_param["flow_H2"] = diff_hydrogen
+        self.dict_param["flow_H2"] = diff_hydrogen / self.hydrogen_max_power
         #reward=diff_hydrogen*0.1 # 0.1euro/kWh of hydrogen
         self.hydrogen_storage+=diff_hydrogen
 
@@ -219,21 +225,22 @@ class MyEnv(gym.Env):
             if (self._last_ponctual_observation[0]*self.battery_size>Energy_needed_from_battery):
                 # If enough energy in the battery, use it
                 self.dict_param["lack_energy"] = 0
-                self.dict_param["flow_lythium"] = - Energy_needed_from_battery/self.battery_eta
+                self.dict_param["flow_lithium"] = - Energy_needed_from_battery/self.battery_eta/self.battery_size
                 self._last_ponctual_observation[0] = self._last_ponctual_observation[0] + \
-                                                     self.dict_param["flow_lythium"]/self.battery_size
+                                                     self.dict_param["flow_lithium"]
 
             else:
                 # Otherwise: use what is left and then penalty
                 self.dict_param["lack_energy"] = (Energy_needed_from_battery -
                                                   self._last_ponctual_observation[0] * self.battery_size)
-                self.dict_param["flow_lythium"] = - self._last_ponctual_observation[0]
-                self._last_ponctual_observation[0] = 0 * self.battery_size
+                self.dict_param["flow_lithium"] = - self._last_ponctual_observation[0]
+                self._last_ponctual_observation[0] = 0
             if self._max_ener_buy is not None:
                 self.dict_param["buy_energy"] = min(self._max_ener_buy, self.dict_param["lack_energy"])
             else:
                 self.dict_param["buy_energy"] = self.dict_param["lack_energy"]
             self.dict_param["lack_energy"] -= self.dict_param["buy_energy"]
+
         elif (Energy_needed_from_battery<0):
             # Surplus of energy --> load the battery
             self.dict_param["waste_energy"] = max(0, (self._last_ponctual_observation[0] * self.battery_size
@@ -241,7 +248,7 @@ class MyEnv(gym.Env):
             tmp_bat = self._last_ponctual_observation[0]
             self._last_ponctual_observation[0] = min(1.,
                     self._last_ponctual_observation[0]-Energy_needed_from_battery/self.battery_size*self.battery_eta)
-            self.dict_param["flow_lythium"] = (self._last_ponctual_observation[0] - tmp_bat) * self.battery_size
+            self.dict_param["flow_lithium"] = (self._last_ponctual_observation[0] - tmp_bat)
         if self._max_ener_sell is not None:
             self.dict_param["sell_energy"] = min(self._max_ener_sell, self.dict_param["waste_energy"])
         else:
@@ -253,17 +260,28 @@ class MyEnv(gym.Env):
         self._last_ponctual_observation[self._length_history + 1:2 * self._length_history] = \
             self._last_ponctual_observation[self._length_history + 2: 2 * self._length_history+1]
         self._last_ponctual_observation[2 * self._length_history] = self.production_norm[self.counter]
+
+
+        self.dict_param["soc"] = self._last_ponctual_observation[0]
+
         i=2 * self._length_history
         #i=1
         if(self._dist_equinox):
             i=i+1
-            self._last_ponctual_observation[i]=abs(self.counter/24-(365./2))/(365./2) #171 days between 1jan and 21 Jun
+            self._last_ponctual_observation[i]=abs(self.counter/24-(365./2))/(365./2) # 171 days between 1 jan and 21 Jun
         if (self._pred):
             i=i+1
-            self._last_ponctual_observation[i] = sum(self.production_norm[self.counter:self.counter+24])/24.#*self.rng.uniform(0.75,1.25)
-            self._last_ponctual_observation[i+1] = sum(self.production_norm[self.counter:self.counter+48])/48.#*self.rng.uniform(0.75,1.25)
+            self._last_ponctual_observation[i] = sum(self.production_norm[self.counter:self.counter+24])/24.
+            self._last_ponctual_observation[i+1] = sum(self.production_norm[self.counter:self.counter+48])/48.
                                 
         self.counter+=1
+
+        #normalized value
+        self.dict_param["lack_energy"] /= (self.scale_cons + self.hydrogen_max_power)
+        self.dict_param["buy_energy"] /= (self.scale_cons + self.hydrogen_max_power)
+        self.dict_param["sell_energy"] /= (self.scale_prod + self.hydrogen_max_power)
+        self.dict_param["waste_energy"] /= (self.scale_prod + self.hydrogen_max_power) 
+
         dict_reward = self.my_reward()
         if self._pred:
             done = self.counter + 24 >= len(self.production_norm)
@@ -272,7 +290,7 @@ class MyEnv(gym.Env):
         info = {}
         reward = np.sum(list(dict_reward.values()))
 
-        self.dict_param["soc"] = self._last_ponctual_observation[0]
+
 
         self._save({"action": action,
                     "rewards": reward,"consumption": self.consumption[self.counter-1],
@@ -302,7 +320,7 @@ class MyEnv(gym.Env):
             val_fn = fn(self.dict_param)
             res[key] = val_fn * self.dict_coeff[key]
         return res"""
-        return {key:fn(self.dict_param) * self.dict_coeff[key] for key, fn in self.dict_reward.items()}
+        return {key: fn(self.dict_param) * self.dict_coeff[key] for key, fn in self.dict_reward.items()}
 
     def get_data(self):
         return self.save_state
