@@ -42,10 +42,6 @@ class Defaults:
     EPISODE = 60
     STEPS_PER_TEST = 365 * 24 - 1
 
-    # ----------------------
-    # Environment Parameters
-    # ----------------------
-    FRAME_SKIP = 1
 
     # ----------------------
     # DQN Agent parameters:
@@ -65,11 +61,18 @@ class Defaults:
     DETERMINISTIC = False
     TARGET_UPDATE_INTERVAL = 2
 
+
+# parameters used in the initialization of environments
 class EnvParam:
+    # The max value of the network purchase (None = no limit)
     MAX_BUY_ENERGY = None
+    # The maximum value of the network sale (None = no limit)
     MAX_SELL_ENERGY = None
+    # To know the production and consumption of the following
     PREDICTION = False
+    # To have the deadline before the next solstice
     EQUINOX = True
+    # Size of the production/consumption history
     LENGTH_HISTORY = 12
 
 def init_env(connect):
@@ -265,12 +268,16 @@ def reset_all(lreset):
     for elt in lreset:
         elt.reset()
 
-def main():
+
+
+
+def main(env_res=None, env_valid_res=None, lreset=None):
     start = time.time()
     patience = None
     dirname = "result_corr_norm_test"
     # --- Instantiate environments ---
-    env_res, env_valid_res, lreset  = init_env(True)
+    if env_res is None or env_valid_res is None or lreset is None:
+        env_res, env_valid_res, lreset  = init_env(True)
     for connect in [True, False]:
         # del env to prevent MemoryError
         del_env(env_res)
@@ -288,8 +295,6 @@ def main():
         discount = 0.8
         train_freq = 2
         freeze = 50
-
-        learning_starts = 1
 
 
         for key in env_res.keys():
@@ -387,7 +392,6 @@ def test(dirname, filename,
                 target_update_interval=freeze,
                 train_freq=train_freq,
                 tau=tau,
-                #learning_starts=1,
                 verbose=0)
 
     best = BestCallback(env_valid, dict_env, patience, filename, dirname)
@@ -697,5 +701,86 @@ def plot_gene(best, dirname, filename, verbose=False, param=""):
 
 
 
+def init_env2():
+    rng = np.random.RandomState()
+    env_res = dict()
+    env_valid_res = dict()
+    absolute_dir = os.path.abspath('')
+    prod = np.load(absolute_dir + "/microGrid/env/data/BelgiumPV_prod_test.npy")[0:1 * 365 * 24]
+    cons = np.load(absolute_dir + "/microGrid/env/data/example_nondeterminist_cons_test.npy")[0:1 * 365 * 24]
+    max_buy = EnvParam.MAX_BUY_ENERGY
+    max_sell = EnvParam.MAX_SELL_ENERGY
+
+    # --- Instantiate reward parameters ---
+
+    lres_reset = []
+    reward_blackout = BlackoutReward()
+    lres_reset.append(reward_blackout)
+    reward_valid_blackout = BlackoutReward()
+    lres_reset.append(reward_valid_blackout)
+
+    # profit réseau
+    key = "vente"
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=max_buy,
+                                       max_ener_sell=max_sell)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                             pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                             length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=max_buy,
+                                             max_ener_sell=max_sell)
+    env_res[key].add_reward("Profit", lambda x: (x["sell_energy"]), 1.)
+
+    env_valid_res[key].add_reward("Profit", lambda x: (x["sell_energy"]), 1.)
+
+    # profit réseau
+    key = "achat"
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=max_buy,
+                                       max_ener_sell=max_sell)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                             pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                             length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=max_buy,
+                                             max_ener_sell=max_sell)
+    env_res[key].add_reward("Profit", lambda x: (-x["buy_energy"]), 1.)
+    env_valid_res[key].add_reward("Profit", lambda x: (-x["buy_energy"]), 1.)
+
+
+    key = "(-cout_coupure)_x_coupure"
+    max_blackout = 365. * 24
+
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=0,
+                                       max_ener_sell=0)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                             pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                             length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=0,
+                                             max_ener_sell=0)
+
+    env_res[key].add_reward("Blackout", lambda x: reward_blackout.fn(x) / max_blackout, 1.)
+    env_valid_res[key].add_reward("Blackout", lambda x: reward_valid_blackout.fn(x) / max_blackout, 1.)
+
+
+
+    # optimisation énergie
+    key = "(-perte_d’energie)_x_cout_perte"
+    env_res[key] = MG_two_storages_env(rng, pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                       length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=0,
+                                       max_ener_sell=0)
+
+    env_valid_res[key] = MG_two_storages_env(rng, consumption=cons, production=prod,
+                                             pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
+                                             length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=0,
+                                             max_ener_sell=0)
+    env_res[key].add_reward("Waste", lambda x: -x["waste_energy"], 1.)
+    env_valid_res[key].add_reward("Waste", lambda x: -x["waste_energy"], 1.)
+
+
+
+    return env_res, env_valid_res, lres_reset
+
 if __name__ == "__main__":
+
     main()
