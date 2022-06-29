@@ -8,7 +8,7 @@ import numpy as np
 
 def plot_op(actions, consumption,production,rewards,battery_level, plot_name):
     ####
-    # PLOT
+    # PLOT use with deer (not perfect)
     ####
     
     print ( "In this plot, total score"+str(np.sum(rewards)) )

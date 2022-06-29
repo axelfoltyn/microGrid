@@ -159,13 +159,13 @@ class MyEnv(gym.Env):
         self.hydrogen_eta=.65
 
     def _init_dict(self):
-        self.dict_param["flow_H2"] = 0.      # Value between 0 and 1
-        self.dict_param["flow_lithium"] = 0. # Value between 0 and 1
-        self.dict_param["lack_energy"] = 0.  # Value between 0 and 1
-        self.dict_param["waste_energy"] = 0. # Value between 0 and 1
-        self.dict_param["soc"] = 0.          # Value between 0 and 1
-        self.dict_param["buy_energy"] = 0.   # Value between 0 and 1
-        self.dict_param["sell_energy"] = 0.  # Value between 0 and 1
+        self.dict_param["flow_H2"] = 0.       # Value between 0 and 1
+        self.dict_param["flow_lithium"] = 0.  # Value between 0 and 1
+        self.dict_param["lack_energy"] = 0.   # Value between 0 and 1
+        self.dict_param["waste_energy"] = 0.  # Value between 0 and 1
+        self.dict_param["soc"] = 0.           # Value between 0 and 1
+        self.dict_param["buy_energy"] = 0.    # Value between 0 and 1
+        self.dict_param["sell_energy"] = 0.   # Value between 0 and 1
 
     def reset(self):
         """
@@ -215,7 +215,6 @@ class MyEnv(gym.Env):
             diff_hydrogen=self.hydrogen_max_power
 
         self.dict_param["flow_H2"] = diff_hydrogen / self.hydrogen_max_power
-        #reward=diff_hydrogen*0.1 # 0.1euro/kWh of hydrogen
         self.hydrogen_storage+=diff_hydrogen
 
         Energy_needed_from_battery=true_demand+true_energy_avail_from_hydrogen
@@ -225,7 +224,7 @@ class MyEnv(gym.Env):
             if (self._last_ponctual_observation[0]*self.battery_size>Energy_needed_from_battery):
                 # If enough energy in the battery, use it
                 self.dict_param["lack_energy"] = 0
-                self.dict_param["flow_lithium"] = - Energy_needed_from_battery/self.battery_eta/self.battery_size
+                self.dict_param["flow_lithium"] = -Energy_needed_from_battery/self.battery_eta/self.battery_size
                 self._last_ponctual_observation[0] = self._last_ponctual_observation[0] + \
                                                      self.dict_param["flow_lithium"]
 
@@ -277,6 +276,9 @@ class MyEnv(gym.Env):
         self.counter+=1
 
         #normalized value
+        self.dict_param["flow_H2"] = (1. + self.dict_param["flow_H2"]) / 2.
+        self.dict_param["flow_lithium"] = (1. + self.dict_param["flow_lithium"]) / 2.
+        self.dict_param["lack_energy"] /= (self.scale_cons + self.hydrogen_max_power)
         self.dict_param["lack_energy"] /= (self.scale_cons + self.hydrogen_max_power)
         self.dict_param["buy_energy"] /= (self.scale_cons + self.hydrogen_max_power)
         self.dict_param["sell_energy"] /= (self.scale_prod + self.hydrogen_max_power)
@@ -307,7 +309,7 @@ class MyEnv(gym.Env):
             self.save_state[-1][key].append(val)
 
 
-    def add_reward(self, key, fn, coeff):
+    def add_reward(self, key, fn, coeff=1.):
         self.dict_coeff[key] = coeff
         self.dict_reward[key] = fn
 

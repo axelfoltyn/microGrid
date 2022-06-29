@@ -1,6 +1,7 @@
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 from collections import defaultdict
+import os
 
 class ResetCallback(BaseCallback):
     def __init__(self, lreset):
@@ -14,7 +15,7 @@ class ResetCallback(BaseCallback):
         return True
 
 class BestCallback(BaseCallback):
-    def __init__(self, valid_env, dict_env, patience, dirname, parent_path):
+    def __init__(self, valid_env, dict_env, patience, dirname, parent_path, save_all=True):
         super().__init__()
         self.bestScores = defaultdict(list)
         self.allScores = defaultdict(list)
@@ -26,6 +27,8 @@ class BestCallback(BaseCallback):
         self.dirname = dirname
         self.parent_path = parent_path
         self.data = None
+        self.name = ""
+        self.save_all = save_all
     
         
     def _on_step(self) -> bool:
@@ -52,10 +55,12 @@ class BestCallback(BaseCallback):
         self.allScores["validation"].append(mean_reward)
         print("score", self.dirname + "_score:" + str(self.allScores["validation"][-1]))
         print("train score:" + str(self.allScores["train"][-1]))
-        print(self.locals)
 
         # part best
         if self.bestValidationScoreSoFar is None or mean_reward > self.bestValidationScoreSoFar:
+            if not self.save_all:
+                os.remove(self.name)
+
             self.bestValidationScoreSoFar = mean_reward
             self.cycle = 0
 
@@ -67,12 +72,20 @@ class BestCallback(BaseCallback):
 
             print("new best", self.dirname + "_score:" + str(self.bestScores["validation"][-1]))
             print("train score:" + str(self.bestScores["train"][-1]))
-            self.model.save(self.parent_path + "/" + self.dirname + "/" + self.dirname + "_" + self.model.__class__.__name__ +
-                            "_score" + str(self.bestScores["validation"][-1]))
+            self.name = self.parent_path + "/" + self.dirname + "/" + \
+                        self.dirname + "_" + self.model.__class__.__name__ + \
+                        "_score" + str(self.bestScores["validation"][-1])
+            self.model.save(self.name)
             self.data = self.env_valid.get_data()[-2] #-1 empty because env is reset at the end
+
+
+
         if self.patience is not None and self.cycle >= self.patience:
             return False
         return True
+
+    def get_best_name(self):
+        return self.name
 
     def get_data(self):
         return self.data

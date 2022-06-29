@@ -21,6 +21,7 @@ from datetime import datetime
 import shutil
 
 from microGrid.tools.tool import Rainflow
+from parameters import EnvParam, Defaults
 
 print(os.path.abspath(''))
 
@@ -34,48 +35,16 @@ from microGrid.plot_MG_operation import plot_op
 
 
 
-class Defaults:
-    # ----------------------
-    # Experiment Parameters
-    # ----------------------
-    STEPS_PER_EPISODE = 365 * 24 - 1
-    EPISODE = 60
-    STEPS_PER_TEST = 365 * 24 - 1
 
-
-    # ----------------------
-    # DQN Agent parameters:
-    # ----------------------
-    UPDATE_RULE = 'rmsprop'
-    LEARNING_RATE = 1e-5
-    LEARNING_RATE_DECAY = 0.99
-    DISCOUNT = 0.8
-    DISCOUNT_INC = 0.99
-    DISCOUNT_MAX = 0.98
-    EPSILON_START = 1.0
-    EPSILON_MIN = .1
-    EPSILON_DECAY = 4e-6
-    REPLAY_MEMORY_SIZE = 100000
-    BATCH_SIZE = 256
-    FREEZE_INTERVAL = 50
-    DETERMINISTIC = False
-    TARGET_UPDATE_INTERVAL = 2
-
-
-# parameters used in the initialization of environments
-class EnvParam:
-    # The max value of the network purchase (None = no limit)
-    MAX_BUY_ENERGY = None
-    # The maximum value of the network sale (None = no limit)
-    MAX_SELL_ENERGY = None
-    # To know the production and consumption of the following
-    PREDICTION = False
-    # To have the deadline before the next solstice
-    EQUINOX = True
-    # Size of the production/consumption history
-    LENGTH_HISTORY = 12
 
 def init_env(connect):
+    """
+    :param
+        connect: boolean which allows to know if the micro grid is connected to an external grid
+    :return:
+        the list of environments used, their validation environment
+        and the list of elements that need to launch the reset method before each start of an environment
+    """
     rng = np.random.RandomState()
     env_res = dict()
     env_valid_res = dict()
@@ -129,9 +98,9 @@ def init_env(connect):
                                                  pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
                                                  length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=max_buy,
                                                  max_ener_sell=max_sell)
-        env_res[key].add_reward("Profit", lambda x: (x["sell_energy"]) * price_elec_buy, 1.)
+        env_res[key].add_reward("Profit_sell", lambda x: (x["sell_energy"]) * price_elec_buy, 1.)
 
-        env_valid_res[key].add_reward("Profit", lambda x: (x["sell_energy"]) * price_elec_buy, 1.)
+        env_valid_res[key].add_reward("Profit_sell", lambda x: (x["sell_energy"]) * price_elec_buy, 1.)
 
         # profit réseau
         key = "(-prix_achat)_x_achat"
@@ -143,8 +112,8 @@ def init_env(connect):
                                                  pred=EnvParam.PREDICTION, dist_equinox=EnvParam.EQUINOX,
                                                  length_history=EnvParam.LENGTH_HISTORY, max_ener_buy=max_buy,
                                                  max_ener_sell=max_sell)
-        env_res[key].add_reward("Profit", lambda x: (-x["buy_energy"]) * price_elec_buy, 1.)
-        env_valid_res[key].add_reward("Profit", lambda x: (-x["buy_energy"]) * price_elec_buy, 1.)
+        env_res[key].add_reward("Profit_buy", lambda x: (-x["buy_energy"]) * price_elec_buy, 1.)
+        env_valid_res[key].add_reward("Profit_buy", lambda x: (-x["buy_energy"]) * price_elec_buy, 1.)
 
 
     if not connect:
@@ -324,42 +293,31 @@ def main(env_res=None, env_valid_res=None, lreset=None):
     print("tot time:", int(res / 3600), "h", int((res % 3600) / 60), "min", res % 60, "s")
 
 
-def test(dirname, filename,
-         patience,
-         train_freq,
-         learning_rate,
-         buffer_size,
-         batch_size,
-         discount,
-         eps_decay,
-         freeze,
-         dict_env,
-         env,
-         env_valid,
-         tau=1.,
-         lreset=[],
+def test(dirname, filename, patience, train_freq, learning_rate,
+         buffer_size, batch_size, discount, eps_decay, freeze,
+         dict_env, env, env_valid, tau=1., lreset=[],
          verbose = False, param=""):
 
+    if verbose:
+        # --- init model ---
+        print('MlpPolicy',
+              "learning_rate=", learning_rate,
+              "buffer_size=", buffer_size,
+              "batch_size=", batch_size,
+              "gamma=", discount,
+              "exploration_initial_eps=", Defaults.EPSILON_START,
+              "exploration_final_eps=", Defaults.EPSILON_MIN,
+              "exploration_fraction=", eps_decay,
+              "target_update_interval=", freeze,
+              "size_histo=", EnvParam.LENGTH_HISTORY,
+              "train_freq=", train_freq,
+              "tau=", tau, sep='\n')
 
 
-
-
-    # --- init model ---
-    print('MlpPolicy',
-          "learning_rate=", learning_rate,
-          "buffer_size=", buffer_size,
-          "batch_size=", batch_size,
-          "gamma=", discount,
-          "exploration_initial_eps=", Defaults.EPSILON_START,
-          "exploration_final_eps=", Defaults.EPSILON_MIN,
-          "exploration_fraction=", eps_decay,
-          "target_update_interval=", freeze,
-          "size_histo=", EnvParam.LENGTH_HISTORY,
-          "train_freq=", train_freq,
-          "tau=", tau, sep='\n')
     if not os.path.exists(dirname + "/" + filename):
         os.makedirs(dirname + "/" + filename)
 
+    # saves the parameters used during the learning process
     f = open(dirname+ "/" + filename + "/" + filename + "hyperparam.txt", "a", encoding="utf-8")
     f.write('MlpPolicy\n' +
           "learning_rate=" +  str(learning_rate) +
@@ -399,8 +357,10 @@ def test(dirname, filename,
 
     try:
         start = time.time()
+
         model.learn(Defaults.EPISODE * Defaults.STEPS_PER_EPISODE,
                     callback=[reset, best, reset])  # callback=[verbose_callback, eps_callback, best_callback]
+
         res = time.time() - start
         print("time to train and valid:", int(res / 3600), "h", int((res % 3600) / 60), "min", res % 60, "s")
     except KeyboardInterrupt:
@@ -782,5 +742,4 @@ def init_env2():
     return env_res, env_valid_res, lres_reset
 
 if __name__ == "__main__":
-
     main()
