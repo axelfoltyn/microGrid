@@ -1,6 +1,4 @@
 
-
-
 def creat_sub_dim(map, cut):
     if map is None:
         if isinstance(cut, list):

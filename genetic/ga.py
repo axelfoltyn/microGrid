@@ -102,7 +102,7 @@ def create_env(l_coeff):
                               max_ener_buy=None,
                               max_ener_sell=None)
     connected_env.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
-    connected_env.add_reward("Blackout", lambda x: (1. - reward_blackout.fn(x) / max_blackout) * l_coeff[1])
+    connected_env.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[1])
     connected_env.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[2])
     connected_env.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[3])
 
@@ -114,7 +114,7 @@ def create_env(l_coeff):
                                max_ener_sell=0)
 
     no_connect_env.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
-    no_connect_env.add_reward("Blackout", lambda x: (1. - reward_blackout.fn(x) / max_blackout) * l_coeff[1])
+    no_connect_env.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[1])
     no_connect_env.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[2])
     no_connect_env.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[3])
 
@@ -125,7 +125,7 @@ def create_env(l_coeff):
                               max_ener_buy=None,
                               max_ener_sell=None)
     connected_env_valid.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
-    connected_env_valid.add_reward("Blackout", lambda x: (1. - reward_blackout.fn(x) / max_blackout) * l_coeff[1])
+    connected_env_valid.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[1])
     connected_env_valid.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[2])
     connected_env_valid.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[3])
 
@@ -137,7 +137,7 @@ def create_env(l_coeff):
                                max_ener_sell=0)
 
     no_connect_env_valid.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
-    no_connect_env_valid.add_reward("Blackout", lambda x: (1. - reward_blackout.fn(x) / max_blackout) * l_coeff[1])
+    no_connect_env_valid.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[1])
     no_connect_env_valid.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[2])
     no_connect_env_valid.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[3])
 
@@ -165,7 +165,7 @@ def create_env_test():
                                length_history=EnvParam.LENGTH_HISTORY,
                                max_ener_buy=0,
                                max_ener_sell=0))
-    lenv[-1].add_reward("Blackout", lambda x: (1. - reward_blackout.fn(x) / max_blackout))
+    lenv[-1].add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout))
 
     lenv.append(MG_two_storages_env(np.random.RandomState(),
                               pred=EnvParam.PREDICTION,
@@ -201,7 +201,9 @@ def selection(pop, scores, gener_rnd, k=3):
 def eval(dirname, filename, l_coeff, env_test, lreset_test, val=0, patience = 15):
     res = []
     lenvs, lreset = create_env(l_coeff)
+    res2 = []
     for envs in lenvs:
+        res2 = []
         env = envs[0]
         env_valid = envs[1]
         # create a DQN agent with a fixed seed random
@@ -229,13 +231,15 @@ def eval(dirname, filename, l_coeff, env_test, lreset_test, val=0, patience = 15
 
         model.load(best.get_best_name())
         for env in env_test: # TODO faire proprement env (vu que env par pop)
-            tmp = evaluate_policy(model, env, return_episode_rewards=True)
-            print(tmp)
-            res.append(np.mean([t[0] / t[1] for t in tmp]))
+            tmp = evaluate_policy(model, env,  n_eval_episodes=1, return_episode_rewards=True)
+            tmp = [i / j for i, j in zip(tmp[0], tmp[1])]
+            res2.append(np.mean(tmp))
+        res.append(res2)
+        os.remove(best.get_best_name()) # not need model
         #res = [evaluate_policy(model, env)[0] for env in env_test]
         for elt in lreset_test:
             elt.reset()
-    return [np.mean(r) for r in res]
+    return np.mean(res, axis=0) #mean column
 
 
 if __name__ == "__main__":
