@@ -40,7 +40,7 @@ def crossover(pop, r_cross, nb_ind, gener_rnd):
     """ create two new individuals by crossing
         Args:
             pop: populations selected for mutation
-            nb_ind:
+            nb_ind: number of individuals to generate
             r_cross: percentage for there to be a crossover
             gener_rnd: create by numpy.random.default_rng() before
                 methode need is random and integers
@@ -67,15 +67,16 @@ def crossover(pop, r_cross, nb_ind, gener_rnd):
 def mutation(min_val, max_val, pop, nb_ind, r_mut, gener_rnd):
     """ create a new individual by mutation
             Args:
-                min_val
-                max_val
-                pop
+                min_val: minimum value
+                max_val: maximum value
+                pop: populations selected for mutation
+                nb_ind: number of individuals to generate
                 r_mut: percentage for there to be a change on a value.
                 gener_rnd: create by numpy.random.default_rng() before
                     methode need is random
             Return:
                 the new individual
-        """
+    """
     res = []
     for _ in range(nb_ind):
         child = pop[gener_rnd.integers(0, len(pop) - 1)].copy()
@@ -86,7 +87,86 @@ def mutation(min_val, max_val, pop, nb_ind, r_mut, gener_rnd):
         res.append(child)
     return res
 
+
+def selection(pop, scores, gener_rnd, k=3):
+    """ create a new individual by mutation
+        Args:
+            min_val: minimum value
+            max_val: maximum value
+            pop: populations selected for mutation
+            nb_ind: number of individuals to generate
+            r_mut: percentage for there to be a change on a value.
+            gener_rnd: create by numpy.random.default_rng() before
+                methode need is random
+        Return:
+            the new individual
+    """
+    # first random selection
+    selection_ix = gener_rnd.integers(len(pop))
+    for ix in gener_rnd.integers(0, len(pop), k-1):
+        # check if better (e.g. perform a tournament)
+        if scores[ix] < scores[selection_ix]:
+            selection_ix = ix
+    return pop[selection_ix]
+
+
+def eval(dirname, filename, l_coeff, env_test, lreset_test, val=0, patience = 15):
+    res = []
+    lenvs, lreset = create_env(l_coeff)
+    i = 0
+    for envs in lenvs:
+        res2 = []
+        env = envs[0]
+        env_valid = envs[1]
+        # create a DQN agent with a fixed seed random
+        random.seed(val)
+        model = DQN('MlpPolicy', env,
+                    learning_rate=1e-5,
+                    buffer_size=10**5,
+                    batch_size=2**8,
+                    gamma=0.8,
+                    exploration_initial_eps=Defaults.EPSILON_START,
+                    exploration_final_eps=Defaults.EPSILON_MIN,
+                    exploration_fraction=4 * 10**(-6),
+                    target_update_interval=50,
+                    train_freq=2,
+                    tau=0.95,
+                    seed=val,
+                    verbose=0)
+
+        best = BestCallback(env_valid, {}, patience, filename, dirname, verbose=False)
+        reset = ResetCallback(lreset)
+
+
+        model.learn(Defaults.EPISODE * Defaults.STEPS_PER_EPISODE,
+                    callback=[reset, best, reset])
+
+        model.load(best.get_best_name())
+        for env in env_test: # TODO faire proprement env (vu que env par pop)
+            tmp = evaluate_policy(model, env,  n_eval_episodes=1, return_episode_rewards=True)
+            tmp = [i / j for i, j in zip(tmp[0], tmp[1])]
+            res2.append(np.mean(tmp))
+        res.append(res2)
+        os.remove(best.get_best_name()) # not need model
+        #res = [evaluate_policy(model, env)[0] for env in env_test]
+        for elt in lreset_test:
+            elt.reset()
+        i+=1
+    return np.mean(res, axis=0).tolist() #mean column
+
+
 def create_env(l_coeff):
+    """ create a new individual by mutation
+        Args:
+           l_coeff: coefficients for each function (in this order)
+            - Waste
+            - Blackout
+            - Buy
+            - Sell
+        Return: [[connected_env, connected_env_valid], [no_connect_env, no_connect_env_valid]], lres_reset
+           - list of environment list (train env + valid env) one for connected microgrid the other for not connected.
+           - list of functions that need to be reset at each launch
+    """
     lres_reset = []
     reward_blackout = BlackoutReward()
     lres_reset.append(reward_blackout)
@@ -101,9 +181,9 @@ def create_env(l_coeff):
                               length_history=EnvParam.LENGTH_HISTORY,
                               max_ener_buy=None,
                               max_ener_sell=None)
-    connected_env.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
+    connected_env.add_reward("Waste", lambda x: (1 - x["waste_energy"]) * l_coeff[0])
     connected_env.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[1])
-    connected_env.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[2])
+    connected_env.add_reward("Profit_buy", lambda x: (1 - x["buy_energy"]) * l_coeff[2])
     connected_env.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[3])
 
     no_connect_env = MG_two_storages_env(np.random.RandomState(),
@@ -187,59 +267,6 @@ def create_env_test():
 
     return lenv, lres_reset
 
-
-def selection(pop, scores, gener_rnd, k=3):
-    # first random selection
-    selection_ix = gener_rnd.integers(len(pop))
-    for ix in gener_rnd.integers(0, len(pop), k-1):
-        # check if better (e.g. perform a tournament)
-        if scores[ix] < scores[selection_ix]:
-            selection_ix = ix
-    return pop[selection_ix]
-
-
-def eval(dirname, filename, l_coeff, env_test, lreset_test, val=0, patience = 15):
-    res = []
-    lenvs, lreset = create_env(l_coeff)
-    res2 = []
-    for envs in lenvs:
-        res2 = []
-        env = envs[0]
-        env_valid = envs[1]
-        # create a DQN agent with a fixed seed random
-        random.seed(val)
-        model = DQN('MlpPolicy', env,
-                    learning_rate=1e-5,
-                    buffer_size=10**5,
-                    batch_size=2**8,
-                    gamma=0.8,
-                    exploration_initial_eps=Defaults.EPSILON_START,
-                    exploration_final_eps=Defaults.EPSILON_MIN,
-                    exploration_fraction=4 * 10**(-6),
-                    target_update_interval=50,
-                    train_freq=2,
-                    tau=0.95,
-                    seed=val,
-                    verbose=0)
-
-        best = BestCallback(env_valid, {}, patience, filename, dirname)
-        reset = ResetCallback(lreset)
-
-
-        model.learn(Defaults.EPISODE * Defaults.STEPS_PER_EPISODE,
-                    callback=[reset, best, reset])
-
-        model.load(best.get_best_name())
-        for env in env_test: # TODO faire proprement env (vu que env par pop)
-            tmp = evaluate_policy(model, env,  n_eval_episodes=1, return_episode_rewards=True)
-            tmp = [i / j for i, j in zip(tmp[0], tmp[1])]
-            res2.append(np.mean(tmp))
-        res.append(res2)
-        os.remove(best.get_best_name()) # not need model
-        #res = [evaluate_policy(model, env)[0] for env in env_test]
-        for elt in lreset_test:
-            elt.reset()
-    return np.mean(res, axis=0) #mean column
 
 
 if __name__ == "__main__":

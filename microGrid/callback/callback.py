@@ -15,7 +15,7 @@ class ResetCallback(BaseCallback):
         return True
 
 class BestCallback(BaseCallback):
-    def __init__(self, valid_env, dict_env, patience, dirname, parent_path, save_all=True):
+    def __init__(self, valid_env, dict_env, patience, dirname, parent_path, save_all=True, verbose=True):
         super().__init__()
         self.bestScores = defaultdict(list)
         self.allScores = defaultdict(list)
@@ -29,6 +29,7 @@ class BestCallback(BaseCallback):
         self.data = None
         self.name = ""
         self.save_all = save_all
+        self.verbose = verbose
     
         
     def _on_step(self) -> bool:
@@ -53,8 +54,9 @@ class BestCallback(BaseCallback):
         self.allScores["train"].append(mean_reward)
         mean_reward, std_reward = evaluate_policy(self.model, self.env_valid, n_eval_episodes=1)
         self.allScores["validation"].append(mean_reward)
-        print("score", self.dirname + "_score:" + str(self.allScores["validation"][-1]))
-        print("train score:" + str(self.allScores["train"][-1]))
+        if self.verbose:
+            print("score", self.dirname + "_score:" + str(self.allScores["validation"][-1]))
+            print("train score:" + str(self.allScores["train"][-1]))
 
         # part best
         if self.bestValidationScoreSoFar is None or mean_reward > self.bestValidationScoreSoFar:
@@ -70,8 +72,9 @@ class BestCallback(BaseCallback):
             self.bestScores["validation"].append(self.allScores["validation"][-1])
             self.bestScores["train"].append(self.allScores["train"][-1])
 
-            print("new best", self.dirname + "_score:" + str(self.bestScores["validation"][-1]))
-            print("train score:" + str(self.bestScores["train"][-1]))
+            if self.verbose:
+                print("new best", self.dirname + "_score:" + str(self.bestScores["validation"][-1]))
+                print("train score:" + str(self.bestScores["train"][-1]))
             self.name = self.parent_path + "/" + self.dirname + "/" + \
                         self.dirname + "_" + self.model.__class__.__name__ + \
                         "_score" + str(self.bestScores["validation"][-1])

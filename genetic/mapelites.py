@@ -31,6 +31,22 @@ def coor_map(map_cut, score):
         res.append(coor-1)
     return res
 
+def insert_map(map, map_score, coor, ind, score, i=0):
+    if i == len(coor)-1:
+        if map[coor[i]] is None:
+            diff = sum(score)
+            map[coor[i]] = ind
+            map_score[coor[i]] = score
+        elif sum(map_score[coor[i]]) < sum(score):
+            diff = sum(score) - sum(map_score[coor[i]])
+            map[coor[i]] = ind
+            map_score[coor[i]] = score
+        else:
+            diff = sum(score) - sum(map_score[coor[i]])
+        return diff
+    return insert_map(map[coor[i]], map_score[coor[i]], coor, ind, score, i+1)
+
+
 
 
 if __name__ == "__main__":
@@ -43,3 +59,15 @@ if __name__ == "__main__":
     coor = coor_map(r2, s)
     print(coor)
     print([r2[i][coor[i]] for i in range(len(coor))])
+    print(insert_map(r1, r_score, coor, s, s))
+    print(r1)
+    print(insert_map(r1, r_score, coor, s, s))
+
+    s2 = [.265, .42, .83]
+    print(s2)
+    coor2 = coor_map(r2, s2)
+    print(coor2)
+    print([r2[i][coor2[i]] for i in range(len(coor))])
+    print(insert_map(r1, r_score, coor2, s2, s2))
+    print(r1)
+    print(insert_map(r1, r_score, coor, s2, s2))
