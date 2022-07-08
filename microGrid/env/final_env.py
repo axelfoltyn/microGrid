@@ -241,7 +241,7 @@ class MyEnv(gym.Env):
                 self.dict_param["buy_energy"] = self.dict_param["lack_energy"]
             self.dict_param["lack_energy"] -= self.dict_param["buy_energy"]
 
-        elif (Energy_needed_from_battery<0):
+        elif (Energy_needed_from_battery < 0):
             # Surplus of energy --> load the battery
             self.dict_param["waste_energy"] = max(0, (self._last_ponctual_observation[0] * self.battery_size
                                                   - Energy_needed_from_battery * self.battery_eta) - self.battery_size)

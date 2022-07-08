@@ -31,7 +31,7 @@ def coor_map(map_cut, score):
         res.append(coor-1)
     return res
 
-def insert_map(map, map_score, coor, ind, score, i=0):
+"""def insert_map(map, map_score, coor, ind, score, i=0):
     if i == len(coor)-1:
         if map[coor[i]] is None:
             diff = sum(score)
@@ -44,15 +44,29 @@ def insert_map(map, map_score, coor, ind, score, i=0):
         else:
             diff = sum(score) - sum(map_score[coor[i]])
         return diff
-    return insert_map(map[coor[i]], map_score[coor[i]], coor, ind, score, i+1)
+    return insert_map(map[coor[i]], map_score[coor[i]], coor, ind, score, i+1)"""
 
+def insert_map(dict_map, dict_map_score, coor, ind, score, i=0):
+    tuple_coor = tuple(coor)
+    diff = sum(score)
+    if tuple_coor in dict_map:
+        diff -= sum(dict_map_score[tuple_coor])
+        if sum(score) > sum(dict_map_score[tuple_coor]):
+            dict_map[tuple_coor] = ind
+            dict_map_score[tuple_coor] = score
+    else:
+        dict_map[tuple_coor] = ind
+        dict_map_score[tuple_coor] = score
+    return diff
 
 
 
 if __name__ == "__main__":
     r1,r_score, r2 = creat_map([2, 100, [.2, .5, .60, .80]], 0, 1)
-    print(r1)
-    print([len(r) for r in r2])
+    dict_map = dict()
+    dict_map_s = dict()
+    #print(r1)
+    #print([len(r) for r in r2])
     print(r2)
     s = [.265, .42, .82]
     print(s)
@@ -60,8 +74,11 @@ if __name__ == "__main__":
     print(coor)
     print([r2[i][coor[i]] for i in range(len(coor))])
     print(insert_map(r1, r_score, coor, s, s))
+    print(insert_map2(dict_map, dict_map_s, coor, s, s))
+
     print(r1)
     print(insert_map(r1, r_score, coor, s, s))
+    print(insert_map2(dict_map, dict_map_s, coor, s, s))
 
     s2 = [.265, .42, .83]
     print(s2)
@@ -69,5 +86,7 @@ if __name__ == "__main__":
     print(coor2)
     print([r2[i][coor2[i]] for i in range(len(coor))])
     print(insert_map(r1, r_score, coor2, s2, s2))
+    print(insert_map2(dict_map, dict_map_s, coor2, s2, s2))
     print(r1)
     print(insert_map(r1, r_score, coor, s2, s2))
+    print(insert_map2(dict_map, dict_map_s, coor2, s2, s2))

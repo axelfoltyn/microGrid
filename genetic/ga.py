@@ -87,27 +87,34 @@ def mutation(min_val, max_val, pop, nb_ind, r_mut, gener_rnd):
         res.append(child)
     return res
 
-
-def selection(pop, scores, gener_rnd, k=3):
+#todo a faire comentaire
+def selection(pop, scores, gener_rnd, nb_ind, k=3):
     """ create a new individual by mutation
         Args:
             min_val: minimum value
             max_val: maximum value
             pop: populations selected for mutation
-            nb_ind: number of individuals to generate
+            nb_ind: number of unique individuals selected
             r_mut: percentage for there to be a change on a value.
             gener_rnd: create by numpy.random.default_rng() before
                 methode need is random
         Return:
             the new individual
     """
+    """if nb_ind >= len(pop):
+        return pop"""#utile ?
     # first random selection
-    selection_ix = gener_rnd.integers(len(pop))
-    for ix in gener_rnd.integers(0, len(pop), k-1):
-        # check if better (e.g. perform a tournament)
-        if scores[ix] < scores[selection_ix]:
-            selection_ix = ix
-    return pop[selection_ix]
+    selected = []
+    no_select = list(range(len(pop)))
+    for _ in range(nb_ind):
+        s = gener_rnd.integers(len(no_select))
+        for i in gener_rnd.integers(0, len(no_select), k-1):
+            # check if better (e.g. perform a tournament)
+            if no_select[s] not in selected and scores[no_select[i]] < scores[no_select[s]]:
+                s = i
+        selected.append(no_select[s])
+        no_select.remove(s)
+    return [pop[i] for i in selected]
 
 
 def eval(dirname, filename, l_coeff, env_test, lreset_test, val=0, patience = 15):
