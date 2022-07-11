@@ -94,26 +94,27 @@ def selection(pop, scores, gener_rnd, nb_ind, k=3):
             min_val: minimum value
             max_val: maximum value
             pop: populations selected for mutation
-            nb_ind: number of unique individuals selected
+            nb_ind: number of individuals selected
             r_mut: percentage for there to be a change on a value.
             gener_rnd: create by numpy.random.default_rng() before
                 methode need is random
         Return:
             the new individual
     """
-    """if nb_ind >= len(pop):
-        return pop"""#utile ?
     # first random selection
     selected = []
     no_select = list(range(len(pop)))
     for _ in range(nb_ind):
-        s = gener_rnd.integers(len(no_select))
-        for i in gener_rnd.integers(0, len(no_select), k-1):
-            # check if better (e.g. perform a tournament)
-            if no_select[s] not in selected and scores[no_select[i]] < scores[no_select[s]]:
-                s = i
-        selected.append(no_select[s])
-        no_select.remove(s)
+        if len(no_select) >0:
+            s = gener_rnd.integers(len(no_select))
+            for i in gener_rnd.integers(0, len(no_select), k-1):
+                # check if better (e.g. perform a tournament)
+                if no_select[s] not in selected and scores[no_select[i]] < scores[no_select[s]]:
+                    s = i
+            selected.append(no_select.pop(s))
+
+        else:
+            selected.append(gener_rnd.integers(len(pop)))
     return [pop[i] for i in selected]
 
 

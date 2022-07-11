@@ -1,3 +1,5 @@
+import numpy as np
+from scipy.spatial import KDTree
 
 def creat_sub_dim(map, cut):
     if map is None:
@@ -51,14 +53,24 @@ def insert_map(dict_map, dict_map_score, coor, ind, score, i=0):
     diff = sum(score)
     if tuple_coor in dict_map:
         diff -= sum(dict_map_score[tuple_coor])
-        if sum(score) > sum(dict_map_score[tuple_coor]):
-            dict_map[tuple_coor] = ind
-            dict_map_score[tuple_coor] = score
+        if diff > 0:
+            dict_map[tuple_coor] = ind.copy()
+            dict_map_score[tuple_coor] = score.copy()
     else:
-        dict_map[tuple_coor] = ind
-        dict_map_score[tuple_coor] = score
+        dict_map[tuple_coor] = ind.copy()
+        dict_map_score[tuple_coor] = score.copy()
     return diff
 
+def get_d(kd_tree, coor, k=3):
+    """
+    :param kd_tree: kd_tree = KDTree(np.array(coor_set))
+    :param k:
+    :param coor:
+    :return: distance
+    """
+    d = list(kd_tree.query(np.array(coor), k))
+    d.sort()
+    return sum(d[:k+1])/k
 
 
 if __name__ == "__main__":
@@ -73,20 +85,20 @@ if __name__ == "__main__":
     coor = coor_map(r2, s)
     print(coor)
     print([r2[i][coor[i]] for i in range(len(coor))])
-    print(insert_map(r1, r_score, coor, s, s))
-    print(insert_map2(dict_map, dict_map_s, coor, s, s))
+    #print(insert_map(r1, r_score, coor, s, s))
+    print(insert_map(dict_map, dict_map_s, coor, s, s))
 
     print(r1)
-    print(insert_map(r1, r_score, coor, s, s))
-    print(insert_map2(dict_map, dict_map_s, coor, s, s))
+    #print(insert_map(r1, r_score, coor, s, s))
+    print(insert_map(dict_map, dict_map_s, coor, s, s))
 
     s2 = [.265, .42, .83]
     print(s2)
     coor2 = coor_map(r2, s2)
     print(coor2)
     print([r2[i][coor2[i]] for i in range(len(coor))])
-    print(insert_map(r1, r_score, coor2, s2, s2))
-    print(insert_map2(dict_map, dict_map_s, coor2, s2, s2))
+    #print(insert_map(r1, r_score, coor2, s2, s2))
+    print(insert_map(dict_map, dict_map_s, coor2, s2, s2))
     print(r1)
-    print(insert_map(r1, r_score, coor, s2, s2))
-    print(insert_map2(dict_map, dict_map_s, coor2, s2, s2))
+    #print(insert_map(r1, r_score, coor, s2, s2))
+    print(insert_map(dict_map, dict_map_s, coor2, s2, s2))
