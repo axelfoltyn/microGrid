@@ -1,9 +1,10 @@
 import csv
 
 from matplotlib import pyplot as plt
+from scipy.spatial import KDTree
 
 from ga import random_pop, selection, mutation, crossover, eval
-from mapelites import creat_map, coor_map, insert_map
+from mapelites import creat_map, coor_map, insert_map, get_d
 
 import numpy as np
 
@@ -13,12 +14,14 @@ print(os.path.abspath(os.path.abspath('')))
 
 
 from microGrid.env.final_env import MyEnv as MG_two_storages_env
-from microGrid.callback.callback import BestCallback, ResetCallback
 from microGrid.reward.reward import BlackoutReward
 
 from parameters import EnvParam
 
 def create_env_test():
+    """
+    :return: list of name environement, list of environement and list of function need to reset.
+    """
     lres_reset = []
     lenv = []
     lname = []
@@ -71,44 +74,67 @@ if __name__ == "__main__":
     import time
     start = time.time()
 
+    ############################
+    #  values has initialized  #
+    ############################
     min_val = 0
     max_val = 10
 
-    N = 10 # Nombre d’itérations avant arrêt de l’algorithme
-    G = 2 # Nombre de générations avant de commencer les mutations
+    N = 10 # Number of iterations before stopping the algorithm
+    G = 5 # Number of generations before starting mutations (initial pop)
 
-    nb_ind = 5 # Nombre de population à chaque iteration
-    r_mut = 0.4
-    r_cross = 1.
-    # creer la moitier en mutation et l'autre en crossover
+    nb_ind = 5 # Number of population generated at each iteration
+    r_mut = 0.4 # probability that an element of an individual changes
+    r_cross = 1. # probability that there is a crossover
+
+    # create half in mutation and half in crossover
     nb_mut = nb_ind % 2 + nb_ind // 2 - (nb_ind // 2) % 2
     nb_cross = nb_ind // 2 + (nb_ind // 2) % 2
 
-    mu = 5 #nb_parent selected to create new child
-    rnd = np.random.default_rng() #random.randint(0, sys.maxsize)
+    mu = 5 # number of parents selected to create new children
+
+    nb_fit = mu // 2 # number of parents selected by fitness score
+    nb_novelty = mu - nb_fit # number of parents selected by novelty score
+
+    k = 3 # K-nearest neighbors to calculate the novelty score
+
+    rnd = np.random.default_rng() #random function need beacous the seed of random is fixed in eval
 
     names, env_test, lreset = create_env_test()
 
-    seed_val = 0
+    seed_val = 0 # seed to fix random in eval
+
+    # dictionary and set that represents the map (key: tuple of coordinate value: ind or score save)
+    coor_set = set()
     dict_map = dict()
     dict_map_s = dict()
-    #map_fn, map_score, map_cut = creat_map([20 for _ in env_test], 0, 1)
+
+    # the cutting of the map
     _, _, map_cut = creat_map([20 for _ in env_test], 0, 1)
-    coor_set = set()
 
-
-
+    ############################
+    #  start of the agorithm  #
+    ############################
+    ## initial population and calculation of its score (novelty + fitness)
     pop = random_pop(min_val, max_val, len(env_test), G, rnd)
     print(pop)
     scores = [eval("eval", str(p), p, env_test, lreset, val=seed_val, patience = 15) for p in pop]
-    print(pop)
+
+    # collecting the coordinates of each individual
     coor = list([coor_map(map_cut, score) for score in scores])
+    # save new coordinate in a set
     coor_set.update([tuple(l) for l in coor])
+
+    # calculation of novelty score (distance)
+    kd_tree = KDTree(np.array(list(map(list, coor_set))))
+    dist = [get_d(kd_tree, c, min(len(coor_set), k)) for c in coor]
+    print("dist", dist, type(dist))
+
+    # add the difference between the individual's score and the one stored in the map
     for i in range(len(scores)):
-        # scores[i].append(insert_map(map_fn, map_score, coor[i], pop[i], scores[i]))
         scores[i].append(insert_map(dict_map, dict_map_s, coor[i], pop[i], scores[i]))
 
-    with open('test.csv', 'w', encoding='UTF8', newline='') as f:
+    """with open('test.csv', 'w', encoding='UTF8', newline='') as f:
         writer = csv.writer(f, delimiter=';')
         # write the header
         header = names
@@ -117,42 +143,36 @@ if __name__ == "__main__":
 
         # write the data
         for c in coor_set:
-            line = list(c) # todo a modif
+            line = list(c)
             line += [dict_map[c]]
             s = dict_map_s[c]
             line += [sum(s)]
             line += s
-            writer.writerow(line)
+            writer.writerow(line)"""
 
     print("pop", pop)
     print("scores", scores)
     print("coor", coor_set, len(coor_set))
 
     for nb_iter in range(N):
-        """if nb_iter < G:
-            pop = list(random_pop(min_val, max_val, len(env_test), nb_ind, rnd))
-        else:"""
-        pop_select = selection(pop, [sum(s) for s in scores], rnd, mu)
+        # selects the parents on which a mutation will be made
+        pop_select = selection(pop, [sum(s) for s in scores], rnd, nb_fit) + selection(pop, dist, rnd, nb_novelty)
         print("pop_select", pop_select)
         pop = mutation(min_val, max_val, pop_select, nb_mut, r_mut, rnd) + crossover(pop_select, r_cross, nb_cross, rnd)
         print("pop", pop, type(pop))
         #eval
         scores = [eval("eval", str(p), p, env_test, lreset, val=seed_val, patience = 15) for p in pop]
+
         print("scores", scores, type(scores))
 
         coor = list([coor_map(map_cut, score) for score in scores])
-        print("coordone", coor, type(coor))
+        kd_tree = KDTree(np.array(list(map(list, coor_set))))
+        dist = [get_d(kd_tree, c, min(len(coor_set), k)) for c in coor]
+        print("dist", dist, type(dist))
         #insert map-elites grid and insert score with novelty value
         for i in range(len(scores)):
-            #scores[i].append(insert_map(map_fn, map_score, coor[i], pop[i], scores[i]))
             scores[i].append(insert_map(dict_map, dict_map_s, coor[i], pop[i], scores[i]))
-        #TODO faire mieux (set of tuple ?)
-        """for coor_elem in coor:
-            if all([not (l == coor_elem) for l in coor_set]):
-                coor_set.append(coor_elem)"""
         coor_set.update([tuple(l) for l in coor])
-        print("pop", pop)
-        print("scores", scores)
         print("coor", coor_set, len(coor_set))
     print("coor", coor_set, len(coor_set))
 

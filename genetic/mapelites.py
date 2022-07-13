@@ -68,7 +68,8 @@ def get_d(kd_tree, coor, k=3):
     :param coor:
     :return: distance
     """
-    d = list(kd_tree.query(np.array(coor), k))
+    d, ind = kd_tree.query(np.array(coor), k)
+    d = list(d)
     d.sort()
     return sum(d[:k+1])/k
 
