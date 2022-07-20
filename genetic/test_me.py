@@ -14,11 +14,11 @@ print(os.path.abspath(os.path.abspath('')))
 
 
 from microGrid.env.final_env import MyEnv as MG_two_storages_env
-from microGrid.reward.reward import BlackoutReward
+from microGrid.reward.reward import BlackoutReward, CountBuyReward
 
 from parameters import EnvParam
 
-def create_env_test():
+def create_env_testV0():
     """
     :return: list of name environement, list of environement and list of function need to reset.
     """
@@ -69,6 +69,81 @@ def create_env_test():
 
     return lname, lenv, lres_reset
 
+def create_env_test(lfn, lname):
+    """
+    :return: list of name environement, list of environement and list of function need to reset.
+    """
+    lenv = []
+    for i in range(len(lfn)):
+        lenv.append(MG_two_storages_env(np.random.RandomState(),
+                                        pred=EnvParam.PREDICTION,
+                                        dist_equinox=EnvParam.EQUINOX,
+                                        length_history=EnvParam.LENGTH_HISTORY,
+                                        max_ener_buy=None,
+                                        max_ener_sell=None))
+        lenv[-1].add_reward(lname[i], lambda x, fn=lfn[i]: fn(x))
+    return lenv
+
+def create_env_testV1():
+    """
+    :return: list of name environement, list of environement and list of function need to reset.
+    """
+    max_buy = 365. * 24
+    lres_reset = []
+    reward_count_buy = CountBuyReward()
+    lres_reset.append(reward_count_buy)
+    reward_valid_count_buy = CountBuyReward()
+    lres_reset.append(reward_valid_count_buy)
+    lenv = []
+    lenv.append(MG_two_storages_env(np.random.RandomState(),
+                                    pred=EnvParam.PREDICTION,
+                                    dist_equinox=EnvParam.EQUINOX,
+                                    length_history=EnvParam.LENGTH_HISTORY,
+                                    max_ener_buy=None,
+                                    max_ener_sell=None))
+    lenv[-1].add_reward("Number_buy", lambda x: (1. + reward_count_buy.fn(x) / max_buy))
+
+    lenv.append(MG_two_storages_env(np.random.RandomState(),
+                                    pred=EnvParam.PREDICTION,
+                                    dist_equinox=EnvParam.EQUINOX,
+                                    length_history=EnvParam.LENGTH_HISTORY,
+                                    max_ener_buy=None,
+                                    max_ener_sell=None))
+    lenv[-1].add_reward("Profit_buy", lambda x: (1-x["buy_energy"]))
+
+    lenv.append(MG_two_storages_env(np.random.RandomState(),
+                                    pred=EnvParam.PREDICTION,
+                                    dist_equinox=EnvParam.EQUINOX,
+                                    length_history=EnvParam.LENGTH_HISTORY,
+                                    max_ener_buy=None,
+                                    max_ener_sell=None))
+    lenv[-1].add_reward("Profit_sell", lambda x: (x["sell_energy"]))
+
+    return lenv, lres_reset
+
+def creat_lfn():
+    lres_reset = []
+    lfn = []
+    lname =[]
+    lcut = []
+    nb_cut = 30
+    max_buy = 365. * 24
+
+    reward_cunt_buy = CountBuyReward()
+    lres_reset.append(reward_cunt_buy)
+    reward_valid_count_buy = CountBuyReward()
+    lres_reset.append(reward_valid_count_buy)
+
+    """lname.append("Number_buy")
+    lfn.append(lambda x: (1. + reward_cunt_buy.fn(x) / max_buy))
+    lcut.append([1 - 1 / (2*i) for i in range(1, nb_cut + 1)])"""
+    lname.append("Profit_buy")
+    lfn.append(lambda x: (1 - x["buy_energy"]))
+    lcut.append([1 - 1 / (2*i) for i in range(1, nb_cut + 1)])
+    lname.append("Profit_sell")
+    lfn.append(lambda x: (x["sell_energy"]))
+    lcut.append([1 / (2*i) for i in range(nb_cut, 0, -1)])
+    return lfn, lres_reset, lname, lcut
 
 if __name__ == "__main__":
     import time
@@ -78,7 +153,9 @@ if __name__ == "__main__":
     #  values has initialized  #
     ############################
     min_val = 0
-    max_val = 10
+    max_val = 50
+    seed_val = 0 # seed to fix random in eval
+
 
     N = 10 # Number of iterations before stopping the algorithm
     G = 5 # Number of generations before starting mutations (initial pop)
@@ -96,21 +173,22 @@ if __name__ == "__main__":
     nb_fit = mu // 2 # number of parents selected by fitness score
     nb_novelty = mu - nb_fit # number of parents selected by novelty score
 
-    k = 3 # K-nearest neighbors to calculate the novelty score
+    k = 10 # K-nearest neighbors to calculate the novelty score
 
     rnd = np.random.default_rng() #random function need beacous the seed of random is fixed in eval
 
-    names, env_test, lreset = create_env_test()
+    lfn, lreset, lname, map_cut = creat_lfn()
 
-    seed_val = 0 # seed to fix random in eval
+    #names, env_test, lreset = create_env_test()
+    #env_test, lreset_test = create_env_test()
+    env_test= create_env_test(lfn, lname)
 
     # dictionary and set that represents the map (key: tuple of coordinate value: ind or score save)
     coor_set = set()
     dict_map = dict()
     dict_map_s = dict()
-
-    # the cutting of the map
-    _, _, map_cut = creat_map([20 for _ in env_test], 0, 1)
+    # use for novelty score
+    lcoor = []
 
     ############################
     #  start of the agorithm  #
@@ -118,15 +196,17 @@ if __name__ == "__main__":
     ## initial population and calculation of its score (novelty + fitness)
     pop = random_pop(min_val, max_val, len(env_test), G, rnd)
     print(pop)
-    scores = [eval("eval", str(p), p, env_test, lreset, val=seed_val, patience = 15) for p in pop]
+    scores = [eval("eval", str(p), p, env_test, lfn, lreset, lname, val=seed_val, patience = 15) for p in pop]
+    print(scores)
 
     # collecting the coordinates of each individual
     coor = list([coor_map(map_cut, score) for score in scores])
+    lcoor += coor
     # save new coordinate in a set
     coor_set.update([tuple(l) for l in coor])
 
     # calculation of novelty score (distance)
-    kd_tree = KDTree(np.array(list(map(list, coor_set))))
+    kd_tree = KDTree(np.array(lcoor))
     dist = [get_d(kd_tree, c, min(len(coor_set), k)) for c in coor]
     print("dist", dist, type(dist))
 
@@ -134,11 +214,41 @@ if __name__ == "__main__":
     for i in range(len(scores)):
         scores[i].append(insert_map(dict_map, dict_map_s, coor[i], pop[i], scores[i]))
 
-    """with open('test.csv', 'w', encoding='UTF8', newline='') as f:
+    print("pop", pop)
+    print("scores", scores)
+    print("coor", coor_set, len(coor_set))
+
+
+    for nb_iter in range(N):
+        # selects the parents on which a mutation will be made
+        pop_select = selection(pop, [sum(s) for s in scores], rnd, nb_fit) + selection(pop, dist, rnd, nb_novelty)
+        print("pop_select", pop_select)
+        pop = mutation(min_val, max_val, pop_select, nb_mut, r_mut, rnd) + crossover(pop_select, r_cross, nb_cross, rnd)
+        print("pop", pop, type(pop))
+        #eval
+        scores = [eval("eval", str(p), p, env_test, lfn, lreset, lname, val=seed_val, patience = 15) for p in pop]
+
+
+
+        coor = list([coor_map(map_cut, score) for score in scores])
+        lcoor += coor
+        #kd_tree = KDTree(np.array(list(map(list, coor_set))))
+        kd_tree = KDTree(np.array(lcoor))
+        dist = [get_d(kd_tree, c, min(len(coor_set), k)) for c in coor]
+        print("dist", dist, type(dist))
+        #insert map-elites grid and insert score with novelty value
+        for i in range(len(scores)):
+            scores[i].append(insert_map(dict_map, dict_map_s, coor[i], pop[i], scores[i]))
+        coor_set.update([tuple(l) for l in coor])
+        print("scores", scores, type(scores))
+        print("coor", coor_set, len(coor_set))
+    print("coor", coor_set, len(coor_set))
+
+    with open('test.csv', 'w', encoding='UTF8', newline='') as f:
         writer = csv.writer(f, delimiter=';')
         # write the header
-        header = names
-        header += ["formule"] + ["scores " + str(name) for name in header]
+        header = lname
+        header += ["formule", "sum_score"] + ["scores " + str(name) for name in header]
         writer.writerow(header)
 
         # write the data
@@ -148,57 +258,7 @@ if __name__ == "__main__":
             s = dict_map_s[c]
             line += [sum(s)]
             line += s
-            writer.writerow(line)"""
-
-    print("pop", pop)
-    print("scores", scores)
-    print("coor", coor_set, len(coor_set))
-
-    for nb_iter in range(N):
-        # selects the parents on which a mutation will be made
-        pop_select = selection(pop, [sum(s) for s in scores], rnd, nb_fit) + selection(pop, dist, rnd, nb_novelty)
-        print("pop_select", pop_select)
-        pop = mutation(min_val, max_val, pop_select, nb_mut, r_mut, rnd) + crossover(pop_select, r_cross, nb_cross, rnd)
-        print("pop", pop, type(pop))
-        #eval
-        scores = [eval("eval", str(p), p, env_test, lreset, val=seed_val, patience = 15) for p in pop]
-
-        print("scores", scores, type(scores))
-
-        coor = list([coor_map(map_cut, score) for score in scores])
-        kd_tree = KDTree(np.array(list(map(list, coor_set))))
-        dist = [get_d(kd_tree, c, min(len(coor_set), k)) for c in coor]
-        print("dist", dist, type(dist))
-        #insert map-elites grid and insert score with novelty value
-        for i in range(len(scores)):
-            scores[i].append(insert_map(dict_map, dict_map_s, coor[i], pop[i], scores[i]))
-        coor_set.update([tuple(l) for l in coor])
-        print("coor", coor_set, len(coor_set))
-    print("coor", coor_set, len(coor_set))
-
-    with open('test.csv', 'w', encoding='UTF8', newline='') as f:
-        writer = csv.writer(f, delimiter=';')
-        # write the header
-        header = names
-        header += ["formule"] + ["scores " + str(name) for name in header]
-        writer.writerow(header)
-
-        # write the data
-        for c in coor_set:
-            line = list(c) # todo a modif
-            line += [dict_map[c]]
-            s = dict_map_s[c]
-            line += [sum(s)]
-            line += s
             writer.writerow(line)
-
-    # TODO faire
-    #fig, ax = plt.subplots()
-    #x_label_list = ['A2', 'B2', 'C2', 'D2']
-    #ax.set_xticks(range(0, 10))
-
-    #ax.set_xticklabels(x_label_list)
-    #ax.imshow(z, extent=[-1, 1, -1, 1])
 
 
     res = time.time() - start

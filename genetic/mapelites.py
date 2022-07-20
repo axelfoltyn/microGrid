@@ -68,6 +68,8 @@ def get_d(kd_tree, coor, k=3):
     :param coor:
     :return: distance
     """
+    if k <= 1:
+        return 0
     d, ind = kd_tree.query(np.array(coor), k)
     d = list(d)
     d.sort()

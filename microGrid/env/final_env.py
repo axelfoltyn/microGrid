@@ -22,7 +22,7 @@ import os
 
 class MyEnv(gym.Env):
     def __init__(self, rng, reduce_qty_data=None, length_history=None, start_history=None,
-                 consumption=None, production=None, scale_cons = 2.1, scale_prod = 12000./1000.,
+                 consumption=None, production=None, scale_cons = 2.1, scale_prod = 12000./1000./2,
                  pred = False, dist_equinox = False, max_ener_buy=None, max_ener_sell=None, verbose=False):
         """ Initialize environment
 

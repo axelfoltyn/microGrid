@@ -33,6 +33,18 @@ class BlackoutReward(Reward):
     def reset(self):
         self.nb_blackout = 0
 
+class CountBuyReward(Reward):
+    def __init__(self):
+        self.reset()
+
+    def fn(self, param):
+        if param["buy_energy"] > 0:
+            self.nb_blackout += param["buy_energy"]
+        return -self.nb_blackout
+
+    def reset(self):
+        self.nb_blackout = 0
+
 class DODReward(Reward):
     def __init__(self, rainflow):
         self.rainflow = rainflow

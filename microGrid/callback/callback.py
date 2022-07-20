@@ -60,7 +60,7 @@ class BestCallback(BaseCallback):
 
         # part best
         if self.bestValidationScoreSoFar is None or mean_reward > self.bestValidationScoreSoFar:
-            if not self.save_all:
+            if not self.save_all and self.name != "":
                 os.remove(self.name)
 
             self.bestValidationScoreSoFar = mean_reward

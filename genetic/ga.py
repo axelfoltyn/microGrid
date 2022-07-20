@@ -3,14 +3,15 @@ import random
 import sys, os
 
 import numpy as np
+from matplotlib import pyplot as plt
+
+from microGrid.reward.reward import CountBuyReward
 
 sys.path.append(os.path.abspath(os.path.abspath('')))
-print(os.path.abspath(os.path.abspath('')))
 
 
 from microGrid.env.final_env import MyEnv as MG_two_storages_env
 from microGrid.callback.callback import BestCallback, ResetCallback
-from microGrid.reward.reward import BlackoutReward
 
 from parameters import EnvParam, Defaults
 
@@ -18,10 +19,8 @@ from stable_baselines3 import DQN
 
 from stable_baselines3.common.evaluation import evaluate_policy
 
-from datetime import datetime
 
-
-def random_pop(min_val, max_val, nb_val, nb_pop, gener_rnd):
+def random_pop(min_val, max_val, nb_val, nb_pop, gener_rnd, is_int = True):
     """initial population, the population is in the form of a list of values.
         Args:
             min_val: minimum value for the list
@@ -29,10 +28,13 @@ def random_pop(min_val, max_val, nb_val, nb_pop, gener_rnd):
             nb_val: number of values in the list
             nb_pop: number of values in list
             gener_rnd: create by numpy.random.default_rng() before
-                methode need is random
+                methode need is random and integers
+            is_int: boolean to chose if each value is an integer of a float
         Return:
             the list of generated populations
     """
+    if is_int:
+        return [[gener_rnd.integers(min_val, max_val) for _ in range(nb_val)] for _ in range(nb_pop)]
     return [[gener_rnd.random() * (max_val - min_val) + min_val for _ in range(nb_val)] for _ in range(nb_pop)]
 
 
@@ -64,7 +66,7 @@ def crossover(pop, r_cross, nb_ind, gener_rnd):
         res.append(c2)
     return res
 
-def mutation(min_val, max_val, pop, nb_ind, r_mut, gener_rnd):
+def mutation(min_val, max_val, pop, nb_ind, r_mut, gener_rnd, is_int = True):
     """ create a new individual by mutation
             Args:
                 min_val: minimum value
@@ -74,20 +76,29 @@ def mutation(min_val, max_val, pop, nb_ind, r_mut, gener_rnd):
                 r_mut: percentage for there to be a change on a value.
                 gener_rnd: create by numpy.random.default_rng() before
                     methode need is random and integers
+                is_int: boolean to chose if each value is an integer of a float
             Return:
-                the new individual
+                the new deferent individual
     """
     res = []
     for _ in range(nb_ind):
         child = pop[gener_rnd.integers(0, len(pop) - 1)].copy()
-        for i in range(len(child)):
-            if gener_rnd.random() < r_mut:
-                # change value
-                child[i] = gener_rnd.random() * (max_val - min_val) + min_val
+        change = False
+        while not change:
+            for i in range(len(child)):
+                if gener_rnd.random() < r_mut:
+                    # change value
+                    tmp = child[i]
+                    if is_int:
+                        child[i] = gener_rnd.integers(min_val, max_val)
+                    else:
+                        child[i] = gener_rnd.random() * (max_val - min_val) + min_val
+                    if tmp != child[i]:
+                        change = True
         res.append(child)
     return res
 
-#todo a faire comentaire
+
 def selection(pop, scores, gener_rnd, nb_ind, k=3):
     """ create a new individual by mutation
         Args:
@@ -118,20 +129,21 @@ def selection(pop, scores, gener_rnd, nb_ind, k=3):
     return [pop[i] for i in selected]
 
 
-def eval(dirname, filename, l_coeff, env_test, lreset_test, val=0, patience = 15):
+def eval(dirname, filename, l_coeff, env_test, lfn, lreset, lname, val=0, patience = 15):
     """
     :param dirname: folder in which the files of the best individuals are temporarily stored.
     :param filename: beginning of the file names of the best individuals.
     :param l_coeff: list of coefficients for each training sub-function.
     :param env_test: list of test environments.
-    :param lreset_test: list of test functions to be reset before calculation.
+    :param lreset: list of test functions to be reset before calculation.
     :param val: seed to fix random function
     :param patience: time out with no better result.
     :return: list of scores obtained for each test environment.
     """
+
     res = []
-    lenvs, lreset = create_env(l_coeff)
-    i = 0
+    #lenvs, lreset = create_env(l_coeff)
+    lenvs = create_env(l_coeff, lfn, lname)
     for envs in lenvs:
         res2 = []
         env = envs[0]
@@ -139,7 +151,7 @@ def eval(dirname, filename, l_coeff, env_test, lreset_test, val=0, patience = 15
         # create a DQN agent with a fixed seed random
         random.seed(val)
         model = DQN('MlpPolicy', env,
-                    learning_rate=1e-5,
+                    learning_rate= 1e-5,
                     buffer_size=10**5,
                     batch_size=2**8,
                     gamma=0.8,
@@ -152,7 +164,7 @@ def eval(dirname, filename, l_coeff, env_test, lreset_test, val=0, patience = 15
                     seed=val,
                     verbose=0)
 
-        best = BestCallback(env_valid, {}, patience, filename, dirname, verbose=False)
+        best = BestCallback(env_valid, {}, patience, filename, dirname, verbose=False, save_all=False)
         reset = ResetCallback(lreset)
 
 
@@ -160,38 +172,35 @@ def eval(dirname, filename, l_coeff, env_test, lreset_test, val=0, patience = 15
                     callback=[reset, best, reset])
 
         model.load(best.get_best_name())
-        for env in env_test: # TODO faire proprement env (vu que env par pop)
-            tmp = evaluate_policy(model, env,  n_eval_episodes=1, return_episode_rewards=True)
+        for env in env_test:
+            for elt in lreset:
+                elt.reset()
+            tmp = evaluate_policy(model, env, n_eval_episodes=1, return_episode_rewards=True)
             tmp = [i / j for i, j in zip(tmp[0], tmp[1])]
             res2.append(np.mean(tmp))
         res.append(res2)
+        bestScores, allScores = best.get_score()
+        plt.plot(range(1, len(allScores["train"]) + 1), allScores["train"],
+                 label="score train")
+        plt.show()
         os.remove(best.get_best_name()) # not need model
-        #res = [evaluate_policy(model, env)[0] for env in env_test]
-        for elt in lreset_test:
-            elt.reset()
-        i+=1
-    return np.mean(res, axis=0).tolist() #mean column
+    print("res", res)
+    return np.mean(res, axis=0).tolist() # mean column
 
 
-def create_env(l_coeff):
+
+def create_env(l_coeff, lfn, lname):
     """ create a new individual by mutation
         Args:
            l_coeff: coefficients for each function (in this order)
-            - Waste
-            - Blackout
+            - count_buy
             - Buy
             - Sell
+           lfn: list of reward used
         Return: [[connected_env, connected_env_valid], [no_connect_env, no_connect_env_valid]], lres_reset
            - list of environment list (train env + valid env) one for connected microgrid the other for not connected.
            - list of functions that need to be reset at each launch
     """
-    lres_reset = []
-    reward_blackout = BlackoutReward()
-    lres_reset.append(reward_blackout)
-    reward_valid_blackout = BlackoutReward()
-    lres_reset.append(reward_valid_blackout)
-    max_blackout = 365. * 24
-
 
     connected_env = MG_two_storages_env(np.random.RandomState(),
                               pred=EnvParam.PREDICTION,
@@ -199,22 +208,25 @@ def create_env(l_coeff):
                               length_history=EnvParam.LENGTH_HISTORY,
                               max_ener_buy=None,
                               max_ener_sell=None)
-    connected_env.add_reward("Waste", lambda x: (1 - x["waste_energy"]) * l_coeff[0])
-    connected_env.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[1])
-    connected_env.add_reward("Profit_buy", lambda x: (1 - x["buy_energy"]) * l_coeff[2])
-    connected_env.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[3])
 
-    no_connect_env = MG_two_storages_env(np.random.RandomState(),
+    #connected_env.add_reward("Waste", lambda x: (1 - x["waste_energy"]) * l_coeff[0])
+    for i in range(len(lfn)):
+        connected_env.add_reward(lname[i], lambda x, fn=lfn[i], coeff=l_coeff[i]: fn(x) * coeff)
+    #connected_env.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[0])
+    #connected_env.add_reward("Profit_buy", lambda x: (1 - x["buy_energy"]) * l_coeff[1])
+    #connected_env.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[2])
+
+    """no_connect_env = MG_two_storages_env(np.random.RandomState(),
                                pred=EnvParam.PREDICTION,
                                dist_equinox=EnvParam.EQUINOX,
                                length_history=EnvParam.LENGTH_HISTORY,
                                max_ener_buy=0,
                                max_ener_sell=0)
 
-    no_connect_env.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
-    no_connect_env.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[1])
-    no_connect_env.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[2])
-    no_connect_env.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[3])
+    #no_connect_env.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
+    no_connect_env.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[0])
+    no_connect_env.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[1])
+    no_connect_env.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[2])"""
 
     connected_env_valid = MG_two_storages_env(np.random.RandomState(),
                               pred=EnvParam.PREDICTION,
@@ -222,21 +234,77 @@ def create_env(l_coeff):
                               length_history=EnvParam.LENGTH_HISTORY,
                               max_ener_buy=None,
                               max_ener_sell=None)
-    connected_env_valid.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
-    connected_env_valid.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[1])
-    connected_env_valid.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[2])
-    connected_env_valid.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[3])
 
-    no_connect_env_valid = MG_two_storages_env(np.random.RandomState(),
+    for i in range(len(lfn)):
+        connected_env_valid.add_reward(lname[i], lambda x, fn=lfn[i], coeff=l_coeff[i]: fn(x) * coeff)
+    #connected_env_valid.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
+    #connected_env_valid.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[0])
+    #connected_env_valid.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[1])
+    #connected_env_valid.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[2])
+
+    """no_connect_env_valid = MG_two_storages_env(np.random.RandomState(),
                                pred=EnvParam.PREDICTION,
                                dist_equinox=EnvParam.EQUINOX,
                                length_history=EnvParam.LENGTH_HISTORY,
                                max_ener_buy=0,
                                max_ener_sell=0)
 
-    no_connect_env_valid.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
-    no_connect_env_valid.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[1])
-    no_connect_env_valid.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[2])
-    no_connect_env_valid.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[3])
+    #no_connect_env_valid.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
+    no_connect_env_valid.add_reward("Blackout", lambda x: (1. + reward_blackout.fn(x) / max_blackout) * l_coeff[0])
+    no_connect_env_valid.add_reward("Profit_buy", lambda x: (1-x["buy_energy"]) * l_coeff[1])
+    no_connect_env_valid.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[2])"""
 
-    return [[connected_env, connected_env_valid], [no_connect_env, no_connect_env_valid]], lres_reset
+    #return [[connected_env, connected_env_valid], [no_connect_env, no_connect_env_valid]]
+    return [[connected_env, connected_env_valid]]
+
+def create_envV0(l_coeff):
+    """ create a new individual by mutation
+        Args:
+           l_coeff: coefficients for each function (in this order)
+            - Waste
+            - Blackout
+            - Buy
+            - Sell
+           lfn: list of reward used
+        Return: [[connected_env, connected_env_valid], [no_connect_env, no_connect_env_valid]], lres_reset
+           - list of environment list (train env + valid env) one for connected microgrid the other for not connected.
+           - list of functions that need to be reset at each launch
+    """
+    lres_reset=[]
+    max_buy = 365. * 24
+
+    reward_count_buy = CountBuyReward()
+    lres_reset.append(reward_count_buy)
+    reward_valid_count_buy = CountBuyReward()
+    lres_reset.append(reward_valid_count_buy)
+
+    connected_env = MG_two_storages_env(np.random.RandomState(),
+                              pred=EnvParam.PREDICTION,
+                              dist_equinox=EnvParam.EQUINOX,
+                              length_history=EnvParam.LENGTH_HISTORY,
+                              max_ener_buy=None,
+                              max_ener_sell=None)
+
+    #connected_env.add_reward("Waste", lambda x: (1 - x["waste_energy"]) * l_coeff[0])
+    #for i in range(len(lfn)):
+    #    connected_env.add_reward(lname[i], lambda x, fn=lfn[i], coeff=l_coeff[i]: fn(x) * coeff)
+
+    connected_env.add_reward("Number_buy", lambda x: (1. + reward_count_buy.fn(x) / max_buy) * l_coeff[0])
+    connected_env.add_reward("Profit_buy", lambda x: -x["buy_energy"] * l_coeff[1])
+    connected_env.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[2])
+
+    connected_env_valid = MG_two_storages_env(np.random.RandomState(),
+                              pred=EnvParam.PREDICTION,
+                              dist_equinox=EnvParam.EQUINOX,
+                              length_history=EnvParam.LENGTH_HISTORY,
+                              max_ener_buy=None,
+                              max_ener_sell=None)
+
+    #for i in range(len(lfn)):
+    #    connected_env_valid.add_reward(lname[i], lambda x, fn=lfn[i], coeff=l_coeff[i]: fn(x) * coeff)
+    #connected_env_valid.add_reward("Waste", lambda x: (1-x["waste_energy"]) * l_coeff[0])
+    connected_env_valid.add_reward("Number_buy", lambda x: (1. + reward_valid_count_buy.fn(x) / max_buy) * l_coeff[0])
+    connected_env_valid.add_reward("Profit_buy", lambda x: -x["buy_energy"] * l_coeff[1])
+    connected_env_valid.add_reward("Profit_sell", lambda x: (x["sell_energy"]) * l_coeff[2])
+
+    return [[connected_env, connected_env_valid]], lres_reset
