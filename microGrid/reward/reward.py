@@ -1,14 +1,40 @@
 
 class Reward:
+    def fn(self, param):
+        """
+        the reward function
+        :param param: a dict with each value used for reward (see _init_dict in final_env)
+        :return:
+        """
+        pass
+
+    def set_fn(self, f):
+        """
+        set the new reward function
+        :param f: the new reward function
+        :return: NoneType
+        """
+        print("not need function")
+
     def reset(self):
+        """
+        reset value for the reward function
+        :return: NoneType
+        """
         pass
 
 class ClientReward(Reward):
+    """
+    reward related to the dissatisfaction of the customer.
+    It's calculated by function  as parameter,
+    the counting the number of blackout since the last time there was none.
+    """
     def __init__(self):
         self.reset()
         self.f_insatifaction = lambda x: -x
 
     def fn(self, param):
+
         if param["lack_energy"] > 0:
             self.nb_blackout += 1
         else:
@@ -22,6 +48,9 @@ class ClientReward(Reward):
         self.nb_blackout = 0
 
 class BlackoutReward(Reward):
+    """
+
+    """
     def __init__(self):
         self.reset()
 

@@ -23,7 +23,7 @@ import os
 class MyEnv(gym.Env):
     def __init__(self, rng, reduce_qty_data=None, length_history=None, start_history=None,
                  consumption=None, production=None, scale_cons = 2.1, scale_prod = 12000./1000./2,
-                 pred = False, dist_equinox = False, max_ener_buy=None, max_ener_sell=None, verbose=False):
+                 pred = False, dist_equinox = False, max_ener_buy=None, max_ener_sell=None, dictnorm=dict(),verbose=False):
         """ Initialize environment
 
         Arguments:
@@ -39,6 +39,8 @@ class MyEnv(gym.Env):
             dist_equinox - if we want the delay before the next summer solstice
             max_ener_buy - max energy we can take outside
             max_ener_sell - max energy we can give outside
+            dictnorm: dictionary of max value use to normalize (if not set use default normalize)
+            verbose:
         """
 
         self.save_state = []
@@ -46,6 +48,7 @@ class MyEnv(gym.Env):
         # dict_reward stores the reward function
         # dict_coeff stores the reward coefficient
         # (used in add_reward and my_reward)
+        self.dict_norm = dictnorm
         self.dict_reward = dict()
         self.dict_coeff = dict()
         # init parameter dictionary
@@ -109,9 +112,7 @@ class MyEnv(gym.Env):
             production = np.load(absolute_dir + "/data/BelgiumPV_prod_train.npy")[0:1*365*24]
         # Get production profile in W/Wp in [0,1]
         self.production_norm = production
-        #self.production_valid_norm=np.load(absolute_dir + "/data/BelgiumPV_prod_train.npy")[365*24:2*365*24] #determinist best is 110, "nondeterminist" is 124.9
-        #self.production_test_norm=np.load(absolute_dir + "/data/BelgiumPV_prod_test.npy")[0:1*365*24] #determinist best is 76, "nondeterminist" is 75.2
-        # Scale production profile : 12KWp (60m^2) et en kWh
+       # Scale production profile : 12KWp (60m^2) et en kWh
         self.production=self.production_norm*scale_prod
 
         if verbose:
@@ -159,14 +160,39 @@ class MyEnv(gym.Env):
         self.hydrogen_max_power=1.1
         self.hydrogen_eta=.65
 
+
+
     def _init_dict(self):
-        self.dict_param["flow_H2"] = 0.       # Value between 0 and 1
-        self.dict_param["flow_lithium"] = 0.  # Value between 0 and 1
+        """initializes the value of each key that can be used for rewards
+        """
+        self.dict_param["flow_H2"] = 0.       # Value between -1 and 1
+        self.dict_param["flow_lithium"] = 0.  # Value between -1 and 1
         self.dict_param["lack_energy"] = 0.   # Value between 0 and 1
         self.dict_param["waste_energy"] = 0.  # Value between 0 and 1
         self.dict_param["soc"] = 0.           # Value between 0 and 1
         self.dict_param["buy_energy"] = 0.    # Value between 0 and 1
         self.dict_param["sell_energy"] = 0.   # Value between 0 and 1
+
+    def _normalize_value(self):
+        """
+         normalize each value that can be used for rewards
+        """
+        if "lack_energy" not in self.dict_norm:
+            self.dict_param["lack_energy"] /= (self.scale_cons + self.hydrogen_max_power)
+        else:
+            self.dict_param["lack_energy"] /= self.dict_norm["lack_energy"]
+        if "waste_energy" not in self.dict_norm:
+            self.dict_param["waste_energy"] /= (self.scale_prod + self.hydrogen_max_power)
+        else:
+            self.dict_param["waste_energy"] /= self.dict_norm["waste_energy"]
+        if "buy_energy" not in self.dict_norm:
+            self.dict_param["buy_energy"] /= (self.scale_cons + self.hydrogen_max_power)
+        else:
+            self.dict_param["buy_energy"] /= self.dict_norm["buy_energy"]
+        if "sell_energy" not in self.dict_norm:
+            self.dict_param["sell_energy"] /= (self.scale_prod + self.hydrogen_max_power)
+        else:
+            self.dict_param["sell_energy"] /= self.dict_norm["sell_energy"]
 
     def reset(self):
         """
@@ -276,14 +302,7 @@ class MyEnv(gym.Env):
                                 
         self.counter+=1
 
-        #normalized value
-        self.dict_param["flow_H2"] = (1. + self.dict_param["flow_H2"]) / 2.
-        self.dict_param["flow_lithium"] = (1. + self.dict_param["flow_lithium"]) / 2.
-        self.dict_param["lack_energy"] /= (self.scale_cons + self.hydrogen_max_power)
-        self.dict_param["lack_energy"] /= (self.scale_cons + self.hydrogen_max_power)
-        self.dict_param["buy_energy"] /= (self.scale_cons + self.hydrogen_max_power)
-        self.dict_param["sell_energy"] /= (self.scale_prod + self.hydrogen_max_power)
-        self.dict_param["waste_energy"] /= (self.scale_prod + self.hydrogen_max_power) 
+        self._normalize_value()
 
         dict_reward = self.my_reward()
         if self._pred:
@@ -311,21 +330,25 @@ class MyEnv(gym.Env):
 
 
     def add_reward(self, key, fn, coeff=1.):
+        """
+        :param key: name of reward (first letter in upper case)
+        :param fn: the reward function
+        :param coeff: a coefficient that will be used during the calculation of the reward function
+        :return: NoneType
+        """
         self.dict_coeff[key] = coeff
         self.dict_reward[key] = fn
 
     def my_reward(self):
         """
-        return the test result and the list of test values not used for training
+        return dict of the result for each reward function
         """
-        """res = dict()
-        for key, fn in self.dict_reward.items():
-            val_fn = fn(self.dict_param)
-            res[key] = val_fn * self.dict_coeff[key]
-        return res"""
         return {key: fn(self.dict_param) * self.dict_coeff[key] for key, fn in self.dict_reward.items()}
 
     def get_data(self):
+        """
+        :return: all data saved during one episode
+        """
         return self.save_state
 
     def _init_gym(self):
