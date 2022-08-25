@@ -180,7 +180,6 @@ def eval(dirname, filename, l_coeff, env_test, lfn, lreset, lname, val=0, patien
             os.remove(best.get_best_name()) # not need model
         except OSError as err:
             print(best.get_best_name(), "not exist to remove\n",err)
-    print("res", res)
     return np.mean(res, axis=0).tolist() # mean column
 
 

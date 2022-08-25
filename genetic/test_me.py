@@ -52,7 +52,17 @@ def creat_lfn():
         lcut: cutting value lists of our map
     """
 
-    def _set_fn(fn, lreset, is_neg, born_min, born_max):
+    def _set_fn(fn, lreset, is_neg, born_min, born_max, nb_cut=20):
+        """
+
+        :param fn: the lambda function
+        :param lreset: list of reset function
+        :param is_neg: true if all solutions must be negative, false otherwise
+        :param born_min and born_max: the terminals used for cutting
+        :param nb_cut: how much cutting needs to be done to delimit the set
+        :return:
+            maximum and minimum absolute values
+        """
         def _get_mean(fn, lreset, val=0):
             tmp_env = MG_two_storages_env(np.random.RandomState(),
                                           pred=EnvParam.PREDICTION,
@@ -123,9 +133,9 @@ def creat_lfn():
             return max_res, min_res
 
         if is_neg:
-            cut = [(max_sup + min_sup) * (1 - 1 / nb_cut * i) for i in range(1, nb_cut + 1)]
+            cut = [(born_max + born_min) * (1 - 1 / nb_cut * i) for i in range(1, nb_cut + 1)]
         else:
-            cut = [(max_sup+min_sup) / nb_cut * i for i in range(1, nb_cut + 1)]
+            cut = [(born_max + born_min) / nb_cut * i for i in range(1, nb_cut + 1)]
         max_mean, min_mean = _get_mean(fn, lreset)
         if max_mean != min_mean:
             if is_neg:
@@ -148,19 +158,19 @@ def creat_lfn():
     lres_reset.append(reward_valid_count_buy)
 
     lname.append("Number_buy")
-    fn, cut = _set_fn(lambda x: reward_cunt_buy.fn(x), lres_reset, True, -1, 0)
+    fn, cut = _set_fn(lambda x: reward_cunt_buy.fn(x), lres_reset, True, -1, 0, nb_cut)
     lfn.append(fn)
     lcut.append(cut)
 
 
     lname.append("Profit_buy")
-    fn, cut = _set_fn(lambda x: -x["buy_energy"], lres_reset, True, -1, 0)
+    fn, cut = _set_fn(lambda x: -x["buy_energy"], lres_reset, True, -1, 0, nb_cut)
     lfn.append(fn)
     lcut.append(cut)
 
 
-    lname.append("Profit_sell")
-    fn, cut = _set_fn(lambda x: -x["sell_energy"], lres_reset, True, -1, 0)
+    lname.append("Waste")
+    fn, cut = _set_fn(lambda x: -x["sell_energy"], lres_reset, True, -1, 0, nb_cut)
     lfn.append(fn)
     lcut.append(cut)
 
@@ -168,7 +178,7 @@ def creat_lfn():
 
 def write_data(lname, coor_set, dict_map, dict_map_s, name):
     print([s[-1] > 0.1 for s in scores])
-    print(len(coor_set), " > ", nb_point)
+
 
     with open(name + '.csv', 'w', encoding='UTF8', newline='') as f:
         writer = csv.writer(f, delimiter=';')
@@ -185,7 +195,7 @@ def write_data(lname, coor_set, dict_map, dict_map_s, name):
             line += [sum(s)]
             line += s
             writer.writerow(line)
-    print("updated")
+    print(name + '.csv', "created")
 
 if __name__ == "__main__":
     import time
@@ -196,7 +206,7 @@ if __name__ == "__main__":
     ############################
     min_val = 0
     max_val = 50
-    seed_val = 0 # seed to fix random in eval
+    seed_val = 3 # seed to fix random in eval
     t = 0.1 # threshold before counting an update of our data
 
 
@@ -245,56 +255,48 @@ if __name__ == "__main__":
     # save new coordinate in a set
     coor_set.update([tuple(l) for l in coor])
 
-    print("pop", pop)
     # calculation of novelty score (distance)
     kd_tree = KDTree(np.array(lcoor))
     dist = [get_d(kd_tree, s, min(len(lcoor), k)) for s in scores]
-    print("dist", dist, type(dist))
 
     # add the difference between the individual's score and the one stored in the map
     for i in range(len(scores)):
         scores[i].append(insert_map(dict_map, dict_map_s, coor[i], pop[i], scores[i]))
 
-    print("scores", scores)
-    print("coor", coor_set, len(coor_set))
     cpt2 = 0
+    nb_point = len(coor_set)
     try:
-        #for nb_iter in range(N):
-        nb_point = len(coor_set)
         cpt = 0
         while cpt <= N:
             cpt +=1
             # selects the parents on which a mutation will be made
             pop_select = selection(pop, [sum(s) for s in scores], rnd, nb_fit) + selection(pop, dist, rnd, nb_novelty)
-            print("pop_select", pop_select)
             pop = mutation(min_val, max_val, pop_select, nb_mut, r_mut, rnd) + crossover(pop_select, r_cross, nb_cross, rnd)
-            print("pop", pop, type(pop))
             #eval
             scores = [eval("eval", str(p), p, env_test, lfn, lreset, lname, val=seed_val, patience = 15) for p in pop]
-
-
 
             coor = list([coor_map(map_cut, score) for score in scores])
             lcoor += [s.copy() for s in scores]
             kd_tree = KDTree(np.array(lcoor))
             dist = [get_d(kd_tree, s, min(len(lcoor), k)) for s in scores]
-            print("dist", dist, type(dist))
             #insert map-elites grid and insert score with novelty value
             for i in range(len(scores)):
                 scores[i].append(insert_map(dict_map, dict_map_s, coor[i], pop[i], scores[i]))
             # if there is an improvement, reset the patience counter
+            print([s[-1] > t for s in scores])
+            print(len(coor_set), " > ", nb_point)
             if any([s[-1] > t for s in scores]) or len(coor_set) > nb_point:
                 cpt = 0
                 cpt2 += 1
+                print(len(coor_set), " > ", nb_point)
                 write_data(lname, coor_set, dict_map, dict_map_s, 'test' + str(cpt2))
+                nb_point = len(coor_set)
             coor_set.update([tuple(l) for l in coor])
-            print("scores", scores, type(scores))
-            print("coor", coor_set, len(coor_set))
     except KeyboardInterrupt:
         print('Hello user you have KeyboardInterrupt.')
     print("coor", coor_set, len(coor_set))
 
-    write_data(lname, coor_set, dict_map, dict_map_s, 'test' + "test_final_seed_"+ str(seed_val))
+    write_data(lname, coor_set, nb_point, dict_map, dict_map_s, "test_final_seed_" + str(seed_val))
 
 
     res = time.time() - start
