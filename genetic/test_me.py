@@ -10,7 +10,7 @@ from mapelites import creat_map, coor_map, insert_map, get_d
 
 import numpy as np
 
-import  sys, os
+import sys, os
 
 from microGrid.callback.callback import BestCallback, ResetCallback
 
@@ -207,33 +207,38 @@ if __name__ == "__main__":
     min_val = 0
     max_val = 50
     seed_val = 3 # seed to fix random in eval
+    name = "test" # file name to save data
+    k = 10 # K-nearest neighbors to calculate the novelty score
     t = 0.1 # threshold before counting an update of our data
 
 
-    N = 10 # Number of iterations before stopping the algorithm
+    N = 10 # patience before stopping the algorithm
     G = 5 # Number of generations before starting mutations (initial pop)
 
+    ## genetic values
     nb_ind = 5 # Number of population generated at each iteration
     r_mut = 0.4 # probability that an element of an individual changes
     r_cross = 1. # probability that there is a crossover
+    mu = 5 # number of parents selected to create new children
 
     # create half in mutation and half in crossover
     nb_mut = nb_ind % 2 + nb_ind // 2 - (nb_ind // 2) % 2
     nb_cross = nb_ind // 2 + (nb_ind // 2) % 2
 
-    mu = 5 # number of parents selected to create new children
+    # number of parents selected by fitness score
+    nb_fit = mu // 2
+    # number of parents selected by novelty score
+    nb_novelty = mu - nb_fit
 
-    nb_fit = mu // 2 # number of parents selected by fitness score
-    nb_novelty = mu - nb_fit # number of parents selected by novelty score
+    ############################
+    #  start of the agorithm   #
+    ############################
+    # random function need because the seed of random is fixed in eval
+    rnd = np.random.default_rng()
 
-    k = 10 # K-nearest neighbors to calculate the novelty score
-
-    rnd = np.random.default_rng() #random function need beacous the seed of random is fixed in eval
-
+    # create reward function and environement
     lfn, lreset, lname, map_cut = creat_lfn()
-
-
-    env_test= create_env_test(lfn, lname)
+    env_test = create_env_test(lfn, lname)
 
     # dictionary and set that represents the map (key: tuple of coordinate value: ind or score save)
     coor_set = set()
@@ -242,9 +247,6 @@ if __name__ == "__main__":
     # use for novelty score
     lcoor = []
 
-    ############################
-    #  start of the agorithm   #
-    ############################
     ## initial population and calculation of its score (novelty + fitness)
     pop = random_pop(min_val, max_val, len(env_test), G, rnd)
     scores = [eval("eval", str(p), p, env_test, lfn, lreset, lname, val=seed_val, patience = 15) for p in pop]
@@ -289,14 +291,14 @@ if __name__ == "__main__":
                 cpt = 0
                 cpt2 += 1
                 print(len(coor_set), " > ", nb_point)
-                write_data(lname, coor_set, dict_map, dict_map_s, 'test' + str(cpt2))
+                write_data(lname, coor_set, dict_map, dict_map_s, name + "_" + str(cpt2))
                 nb_point = len(coor_set)
             coor_set.update([tuple(l) for l in coor])
     except KeyboardInterrupt:
         print('Hello user you have KeyboardInterrupt.')
     print("coor", coor_set, len(coor_set))
 
-    write_data(lname, coor_set, nb_point, dict_map, dict_map_s, "test_final_seed_" + str(seed_val))
+    write_data(lname, coor_set, nb_point, dict_map, dict_map_s, name + "_final_seed_" + str(seed_val))
 
 
     res = time.time() - start
