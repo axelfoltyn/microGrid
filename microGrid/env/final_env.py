@@ -30,7 +30,7 @@ class MyEnv(gym.Env):
             rng - the numpy random number generator
             reduce_qty_data - ???
             length_history - size of the consumption and production history
-            start_history - ???
+            start_history - number of iteration before the history start
             consumption - consumption data (normed value)
             production - production data (normed value)
             scale_cons - scale for consumption data

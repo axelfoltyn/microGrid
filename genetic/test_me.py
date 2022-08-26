@@ -6,7 +6,7 @@ from stable_baselines3 import DQN
 from stable_baselines3.common.evaluation import evaluate_policy
 
 from ga import random_pop, selection, mutation, crossover, eval
-from mapelites import creat_map, coor_map, insert_map, get_d
+from mapelites import coor_map, insert_map, get_d
 
 import numpy as np
 
