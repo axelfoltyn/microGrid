@@ -145,6 +145,8 @@ def creat_lfn():
                     mean_max - mean_min)), cut
         else:
             return (lambda x, f=fn, mean_max=max_mean: f(x) / mean_max), cut
+
+
     lres_reset = []
     lfn = []
     lname =[]
@@ -154,11 +156,9 @@ def creat_lfn():
 
     reward_cunt_buy = CountBuyReward()
     lres_reset.append(reward_cunt_buy)
-    reward_valid_count_buy = CountBuyReward()
-    lres_reset.append(reward_valid_count_buy)
 
     lname.append("Number_buy")
-    fn, cut = _set_fn(lambda x: reward_cunt_buy.fn(x), lres_reset, True, -1, 0, nb_cut)
+    fn, cut = _set_fn(lambda x, fn=reward_cunt_buy.fn: fn(x), lres_reset, True, -1, 0, nb_cut)
     lfn.append(fn)
     lcut.append(cut)
 
@@ -216,7 +216,7 @@ if __name__ == "__main__":
     G = 5 # Number of generations before starting mutations (initial pop)
 
     ## genetic values
-    nb_ind = 5 # Number of population generated at each iteration
+    nb_ind = 10 # Number of population generated at each iteration
     r_mut = 0.4 # probability that an element of an individual changes
     r_cross = 1. # probability that there is a crossover
     mu = 5 # number of parents selected to create new children
